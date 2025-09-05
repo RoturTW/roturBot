@@ -25,6 +25,8 @@ _ROOT_DIR = os.path.dirname(_MODULE_DIR)
 
 mistium = str(os.getenv('MISTIUM_ID'))
 originOS = str(os.getenv('ORIGIN_SERVER_ID'))
+tavily_token = str(os.getenv('TAVILY'))
+cerebras_token = str(os.getenv('CEREBRAS'))
 
 tools = open(os.path.join(_MODULE_DIR, "static", "tools.json"), "r")
 tools = json.load(tools)
@@ -1608,7 +1610,7 @@ async def call_tool(name: str, arguments: dict) -> str:
                     f"https://api.tavily.com/extract",
                     json={"urls": [*arguments.get("urls", [])]},
                     headers={
-                        "authorization":"Bearer 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",
+                        "authorization": f"Bearer {tavily_token}",
                         "content-type":"application/json"
                     }
                 ) as resp:
@@ -1622,7 +1624,7 @@ async def call_tool(name: str, arguments: dict) -> str:
                     f"https://api.tavily.com/search",
                     json={"query": f"originos.fandom.com {arguments.get('query', '')}"},
                     headers={
-                        "authorization":"Bearer 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",
+                        "authorization": f"Bearer {tavily_token}",
                         "content-type":"application/json"
                     }
                 ) as resp:
@@ -1634,7 +1636,7 @@ async def call_tool(name: str, arguments: dict) -> str:
                     f"https://api.tavily.com/search",
                     json={"query": f"{arguments.get('query', '')}"},
                     headers={
-                        "authorization":"Bearer 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",
+                        "authorization": f"Bearer {tavily_token}",
                         "content-type":"application/json"
                     }
                 ) as resp:
@@ -1644,7 +1646,7 @@ async def call_tool(name: str, arguments: dict) -> str:
 
 async def should_reply_fast_check(message: discord.Message) -> bool:
     """Use a fast model to decide if roturbot should reply to a message mentioning rotur/roturbot"""
-    api_key = "csk-tr3e56hjn49kwhnmpyrjyxxdxh2x64n4eyh45h28v2yy4wtn"
+    api_key = cerebras_token
 
     messages = [
         {
