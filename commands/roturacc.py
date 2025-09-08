@@ -2,6 +2,8 @@ import json, os, discord
 import ofsf
 from ..helpers import rotur
 
+MISTIUM_ID = "603952506330021898"
+
 async def query(spl, channel, user, dir):
     with open(os.path.join(dir, '..', 'systems.json'), 'r') as f:
         systems = json.load(f)
@@ -82,6 +84,9 @@ async def query(spl, channel, user, dir):
                 return
             send_value = value
             if key == "sys.currency":
+                if str(user.id) != MISTIUM_ID:
+                    await channel.send(f"You do not have permission to update {key}.")
+                    return
                 try:
                     if isinstance(value, str):
                         if '.' in value:
