@@ -47,6 +47,8 @@ async def query(spl, channel, user, dir):
         return
     
     username = spl[1].lower()
+
+    isMistium = str(user.id) == MISTIUM_ID
     
     match spl[2]:
         case 'size':
@@ -65,13 +67,13 @@ async def query(spl, channel, user, dir):
         case 'get':
             username = spl[1]
             user_data = rotur.get_user_by("username", username)
-            if not user_data or user_data.get("system") != user_system["name"]:
+            user_data.pop("password", None)
+            if not user_data or user_data.get("system") != user_system["name"] and not isMistium:
                 await channel.send(f"User {username} not found in your system.")
                 return
-            user_data_str = json.dumps(user_data, indent=4)
             temp_path = os.path.join(dir, "user_data.json")
             with open(temp_path, "w") as temp_file:
-                temp_file.write(user_data_str)
+                temp_file.write(json.dumps(user_data, indent=4))
             await channel.send(file=discord.File(temp_path))
             os.remove(temp_path)
         case 'update':
@@ -85,7 +87,7 @@ async def query(spl, channel, user, dir):
                 await channel.send(f"User {username} not found in your system.")
                 return
             send_value = value
-            if str(user.id) != MISTIUM_ID and key in restrictedKeys:
+            if not isMistium and key in restrictedKeys:
                 await channel.send(f"You do not have permission to update {key}.")
                 return
             if key == "sys.currency":
@@ -110,7 +112,7 @@ async def query(spl, channel, user, dir):
                 await channel.send("Usage: !roturacc <username> remove <key>")
                 return
             key = spl[3]
-            if str(user.id) != MISTIUM_ID and key in restrictedKeys:
+            if not isMistium and key in restrictedKeys:
                 await channel.send(f"You do not have permission to remove {key}.")
                 return
             
