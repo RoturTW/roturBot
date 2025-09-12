@@ -83,6 +83,9 @@ async def query(spl, channel, user, dir):
                 await channel.send(f"User {username} not found in your system.")
                 return
             send_value = value
+            if str(user.id) != MISTIUM_ID and key in ["username", "last_login", "max_size", "key", "created", "password", "system", "id"]:
+                await channel.send(f"You do not have permission to update {key}.")
+                return
             if key == "sys.currency":
                 if str(user.id) != MISTIUM_ID:
                     await channel.send(f"You do not have permission to update {key}.")
