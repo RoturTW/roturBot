@@ -5,6 +5,8 @@ from ..helpers import rotur
 MISTIUM_ID = "603952506330021898"
 
 async def query(spl, channel, user, dir):
+    restrictedKeys = ["username", "last_login", "max_size", "key", "created", "password", "system", "id", "sys.currency"]
+
     with open(os.path.join(dir, '..', 'systems.json'), 'r') as f:
         systems = json.load(f)
         if not systems:
@@ -83,13 +85,10 @@ async def query(spl, channel, user, dir):
                 await channel.send(f"User {username} not found in your system.")
                 return
             send_value = value
-            if str(user.id) != MISTIUM_ID and key in ["username", "last_login", "max_size", "key", "created", "password", "system", "id"]:
+            if str(user.id) != MISTIUM_ID and key in restrictedKeys:
                 await channel.send(f"You do not have permission to update {key}.")
                 return
             if key == "sys.currency":
-                if str(user.id) != MISTIUM_ID:
-                    await channel.send(f"You do not have permission to update {key}.")
-                    return
                 try:
                     if isinstance(value, str):
                         if '.' in value:
@@ -111,6 +110,9 @@ async def query(spl, channel, user, dir):
                 await channel.send("Usage: !roturacc <username> remove <key>")
                 return
             key = spl[3]
+            if str(user.id) != MISTIUM_ID and key in restrictedKeys:
+                await channel.send(f"You do not have permission to remove {key}.")
+                return
             
             user_data = rotur.get_user_by("username", username)
             if not user_data:
