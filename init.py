@@ -47,6 +47,39 @@ def save_activity_exclusions(exclusions):
     with open(os.path.join(_MODULE_DIR, "store", "activity_exclusions.json"), "w") as f:
         json.dump(exclusions, f)
 
+# ---------------- Daily Credit DM Opt-in Handling ---------------- #
+def load_daily_credit_dm_optins():
+    """Load list of users who opted in to receive daily credit DM notifications."""
+    try:
+        with open(os.path.join(_MODULE_DIR, "store", "daily_credit_dm_optins.json"), "r") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+            return []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+def save_daily_credit_dm_optins(optins):
+    """Persist the daily credit DM opt-in list."""
+    with open(os.path.join(_MODULE_DIR, "store", "daily_credit_dm_optins.json"), "w") as f:
+        json.dump(optins, f)
+
+def toggle_daily_credit_dm_optin(user_id) -> bool:
+    """Toggle a user's opt-in status. Returns True if now enabled, False if disabled."""
+    uid = str(user_id)
+    optins = load_daily_credit_dm_optins()
+    if uid in optins:
+        optins.remove(uid)
+        save_daily_credit_dm_optins(optins)
+        return False
+    optins.append(uid)
+    save_daily_credit_dm_optins(optins)
+    return True
+
+def is_daily_credit_dm_enabled(user_id: int) -> bool:
+    """Check if a user has opted in to daily credit DM notifications."""
+    return str(user_id) in load_daily_credit_dm_optins()
+
 def is_user_excluded(user_id):
     """Check if a user is excluded from activity alerts"""
     exclusions = load_activity_exclusions()
@@ -131,6 +164,8 @@ async def award_daily_credit(user_id, credit_amount):
 async def send_credit_dm(user, old_balance, new_balance, credit_amount):
     """Send a DM to the user about their daily credit award"""
     try:
+        if not is_daily_credit_dm_enabled(user.id):
+            return False
         embed = discord.Embed(
             title="💰 Daily Credits Awarded!",
             description=f"You received **{credit_amount}** rotur credits for being active today!",
@@ -151,40 +186,52 @@ async def send_credit_dm(user, old_balance, new_balance, credit_amount):
 
 async def process_daily_credits():
     """Reset daily tracking and announce new day at midnight"""
+    global last_daily_announcement_date
     try:
         activity_data = load_daily_activity()
-        current_date = get_current_date()
-        
-        users_awarded = len(activity_data.get("users", {}))
-        total_credits_awarded = sum(activity_data.get("users", {}).values())
-        
+    except Exception:
+        activity_data = {"date": "", "users": {}}
+
+    current_date = get_current_date()
+
+    if last_daily_announcement_date == current_date:
+        return
+
+    users_awarded = len(activity_data.get("users", {}))
+    total_credits_awarded = sum(activity_data.get("users", {}).values())
+
+    try:
         save_daily_activity({"date": "", "users": {}})
-        
-        general_channel = client.get_channel(1338555310335463557)  # rotur general
+    except Exception as e:
+        print(f"Failed to reset daily activity store: {e}")
+
+    general_channel = client.get_channel(1338555310335463557)  # rotur general
+    try:
         if general_channel and isinstance(general_channel, discord.TextChannel):
             if users_awarded > 0:
                 embed = discord.Embed(
                     title="🌅 Daily Credits Are Now Available!",
-                    description=f"A new day has begun! Yesterday, **{users_awarded}** users earned daily credits. Be active today to earn yours!",
+                    description=(
+                        f"A new day has begun! Yesterday, **{users_awarded}** users earned daily credits. "
+                        "Be active today to earn yours!"
+                    ),
                     color=discord.Color.blue()
                 )
                 embed.add_field(name="Yesterday's Total", value=f"{total_credits_awarded:.2f} credits", inline=True)
                 embed.add_field(name="Users Rewarded", value=f"{users_awarded} users", inline=True)
-                embed.set_footer(text="Send your first message today to earn daily credits!")
             else:
                 embed = discord.Embed(
                     title="🌅 Daily Credits Are Now Available!",
                     description="A new day has begun! Be active today to earn your daily credits!",
                     color=discord.Color.blue()
                 )
-                embed.set_footer(text="Send your first message today to earn daily credits!")
-            
+            embed.set_footer(text="Send your first message today to earn daily credits!")
             await general_channel.send(embed=embed)
-        
-        print(f"Daily credits reset: Yesterday had {users_awarded} users, {total_credits_awarded:.2f} total credits")
-        
     except Exception as e:
-        print(f"Error resetting daily credits: {e}")
+        print(f"Failed to send daily credits announcement: {e}")
+
+    print(f"Daily credits reset: Yesterday had {users_awarded} users, {total_credits_awarded:.2f} total credits")
+    last_daily_announcement_date = current_date
 
 async def daily_credits_scheduler():
     """Schedule daily credits processing at midnight UTC"""
@@ -210,6 +257,9 @@ intents.message_content = True
 intents.reactions = True
 
 client = discord.Client(intents=intents)
+
+last_daily_announcement_date = None
+daily_scheduler_started = False
 
 tree = app_commands.CommandTree(client)
 
@@ -1090,6 +1140,25 @@ async def activity_alert(ctx: discord.Interaction):
     await ctx.response.send_message(embed=embed, ephemeral=True)
 
 @allowed_everywhere
+@tree.command(name='daily_credit_dm', description='Toggle receiving a DM when daily credits are awarded (opt-in)')
+async def daily_credit_dm(ctx: discord.Interaction):
+    enabled = toggle_daily_credit_dm_optin(ctx.user.id)
+    if enabled:
+        embed = discord.Embed(
+            title="✅ Daily Credit DMs Enabled",
+            description="You will receive a DM when your daily credits are awarded (at midnight UTC).",
+            color=discord.Color.green()
+        )
+    else:
+        embed = discord.Embed(
+            title="🔕 Daily Credit DMs Disabled",
+            description="You will no longer receive daily credit award DMs.",
+            color=discord.Color.orange()
+        )
+    embed.set_footer(text="Use /daily_credit_dm again to toggle.")
+    await ctx.response.send_message(embed=embed, ephemeral=True)
+
+@allowed_everywhere
 @tree.command(name='process_daily_credits', description='[Admin] Manually reset daily credits and announce new day')
 async def manual_daily_credits(ctx: discord.Interaction):
     if str(ctx.user.id) != mistium:
@@ -1526,7 +1595,6 @@ async def on_audit_log_entry_create(entry):
         print(f"Error in audit log handler: {e}")
 
 @client.event
-@client.event
 async def on_ready():
     print(f'Logged in as {client.user}')
     print('------')
@@ -1536,9 +1604,13 @@ async def on_ready():
         print(f'Synced {len(synced)} command(s)')
     except Exception as e:
         print(f'Failed to sync commands: {e}')
-    
-    asyncio.create_task(daily_credits_scheduler())
-    print('Daily credits scheduler started')
+    global daily_scheduler_started
+    if not daily_scheduler_started:
+        asyncio.create_task(daily_credits_scheduler())
+        daily_scheduler_started = True
+        print('Daily credits scheduler started')
+    else:
+        print('Daily credits scheduler already running; skipping new task')
 
 token = os.getenv('DISCORD_BOT_TOKEN')
 if token is None:
@@ -1688,45 +1760,77 @@ async def should_reply_fast_check(message: discord.Message) -> bool:
         print(f"Error in fast reply check: {e}")
         return True
 
-async def query_cerebras(messages: list, my_msg: discord.Message) -> str:
-    api_key = "csk-tr3e56hjn49kwhnmpyrjyxxdxh2x64n4eyh45h28v2yy4wtn"
+async def query_cerebras(messages: list, my_msg: discord.Message) -> dict:
+    """Call Cerebras chat API and (recursively) resolve any tool calls.
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            "https://api.cerebras.ai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "messages": messages,
-                "model": "gpt-oss-120b",
-                "tools": tools
-            }
-        ) as response:
-            response_data = await response.json()
+    Always returns a dict shaped like the Cerebras response so the caller
+    can safely do resp.get("choices")[0]["message"]["content"].
+    """
+    api_key = os.getenv("CEREBRAS_API_KEY", "")
+    model = os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
 
-    choice = response_data.get("choices", [{}])[0]
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.cerebras.ai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "messages": messages,
+                    "model": model,
+                    "max_tokens": 512,
+                    "temperature": 0.7,
+                    "tools": tools
+                }
+            ) as response:
+                status = response.status
+                raw = await response.text()
+        try:
+            response_data = json.loads(raw)
+        except Exception:
+            print(f"[cerebras] Non‑JSON response (status {status}): {raw[:300]}")
+            return {"choices": [{"message": {"content": ""}}]}
 
-    if choice.get("finish_reason") == "tool_calls":
-        tool_calls = choice.get("message", {}).get("tool_calls")
-        messages.append({
-            "role":"assistant",
-            "content":"",
-            "tool_calls": tool_calls
-        })
-        for call in tool_calls:
-            func = call.get("function")
-            await my_msg.edit(content=f'Calling tool: {func.get("name")}')
+        if status != 200 or "error" in response_data:
+            print(f"[cerebras] API error status={status}: {response_data}")
+            return {"choices": [{"message": {"content": ""}}]}
+
+        choice = response_data.get("choices", [{}])[0]
+
+        if choice.get("finish_reason") == "tool_calls":
+            tool_calls = choice.get("message", {}).get("tool_calls", [])
             messages.append({
-                "tool_call_id": call.get("id"),
-                "role": "tool",
-                "content": await call_tool(func.get("name"), json.loads(func.get("arguments")))
+                "role": "assistant",
+                "content": "",
+                "tool_calls": tool_calls
             })
-        
-        response_data = await query_cerebras(messages, my_msg)
+            for call in tool_calls:
+                func = call.get("function", {})
+                func_name = func.get("name")
+                try:
+                    await my_msg.edit(content=f'Calling tool: {func_name}')
+                except Exception:
+                    pass
+                args_raw = func.get("arguments", "{}")
+                try:
+                    args = json.loads(args_raw)
+                except Exception:
+                    print(f"[cerebras] Failed to parse tool args for {func_name}: {args_raw}")
+                    args = {}
+                tool_result = await call_tool(func_name, args)
+                messages.append({
+                    "tool_call_id": call.get("id"),
+                    "role": "tool",
+                    "content": tool_result
+                })
+            return await query_cerebras(messages, my_msg)
 
-    return response_data
+        return response_data
+    except Exception as e:
+        print(f"[cerebras] Exception during request: {e}")
+        return {"choices": [{"message": {"content": ""}}]}
 
 def run(parent_context_func=None):
     """Run the Discord bot"""
