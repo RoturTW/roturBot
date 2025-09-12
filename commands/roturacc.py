@@ -68,7 +68,7 @@ async def query(spl, channel, user, dir):
             username = spl[1]
             user_data = rotur.get_user_by("username", username)
             user_data.pop("password", None)
-            if not user_data or user_data.get("system") != user_system["name"] and not isMistium:
+            if not isMistium and (not user_data or user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
             temp_path = os.path.join(dir, "user_data.json")
