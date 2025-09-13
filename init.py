@@ -10,7 +10,11 @@ import asyncio
 
 from sympy import sympify
 import base64, hashlib
-import ofsf
+# Optional import: ofsf (file system stats); ignore if unavailable
+try:
+    import ofsf  # type: ignore
+except Exception:
+    ofsf = None
 from datetime import datetime, timezone, timedelta
 
 def randomString(length):
@@ -382,11 +386,50 @@ async def usage(ctx: discord.Interaction):
     if user is None or user.get('error') == "User not found":
         await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.')
         return
+    if ofsf is None:
+        await ctx.response.send_message("The file system usage service is not available right now.")
+        return
     usage_data = ofsf.get_user_file_size(user.get("username", "unknown"))
     if usage_data is None:
         await ctx.response.send_message("No file system found for your account.")
         return
     await ctx.response.send_message(f'Your file system is: {usage_data}')
+
+@allowed_everywhere
+@tree.command(name='changepass', description='[EPHEMERAL] Change the password of your linked rotur account')
+@app_commands.describe(new_password='Your new password (will be hashed client-side)')
+async def changepass(ctx: discord.Interaction, new_password: str):
+    # Require a linked account
+    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    if user is None or user.get('error') == "User not found":
+        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        return
+
+    token = user.get("key")
+    if not token:
+        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        return
+
+    # Hash the provided password as requested (raw value should be the md5 hash)
+    hashed = hashlib.md5(new_password.encode()).hexdigest()
+
+    try:
+        resp = requests.patch(
+            "https://social.rotur.dev/users",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({"key": "password", "value": hashed, "auth": token})
+        )
+        if resp.status_code == 200:
+            await ctx.response.send_message("Your rotur password has been changed.", ephemeral=True)
+        else:
+            # Surface server error if present
+            try:
+                err = resp.json().get('error')
+            except Exception:
+                err = None
+            await ctx.response.send_message(err or f"Failed to change password. Server responded with status {resp.status_code}.", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error changing password: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='rich', description='See the leaderboard of the richest users')
