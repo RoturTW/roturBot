@@ -59,7 +59,7 @@ async def query(spl, channel, user, dir):
             await channel.send(f"File system size for {username}: {usage_data}")
         case 'token':
             user_data = rotur.get_user_by("username", username)
-            if not user_data or user_data.get("system") != user_system["name"]:
+            if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found.")
                 return
             token = user_data.get("key", "No token found.")
@@ -68,7 +68,7 @@ async def query(spl, channel, user, dir):
             username = spl[1]
             user_data = rotur.get_user_by("username", username)
             user_data.pop("password", None)
-            if not isMistium and (not user_data or user_data.get("system") != user_system["name"]):
+            if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
             temp_path = os.path.join(dir, "user_data.json")
@@ -83,7 +83,7 @@ async def query(spl, channel, user, dir):
             key = spl[3]
             value = spl[4]
             user_data = rotur.get_user_by("username", username)
-            if not user_data:
+            if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
             send_value = value
@@ -112,14 +112,14 @@ async def query(spl, channel, user, dir):
                 await channel.send("Usage: !roturacc <username> remove <key>")
                 return
             key = spl[3]
-            if not isMistium and key in restrictedKeys:
+            user_data = rotur.get_user_by("username", username)
+            if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
+                await channel.send(f"User {username} not found in your system.")
+                return
+            if key in restrictedKeys:
                 await channel.send(f"You do not have permission to remove {key}.")
                 return
             
-            user_data = rotur.get_user_by("username", username)
-            if not user_data:
-                await channel.send(f"User {username} not found in your system.")
-                return
             if key not in user_data:
                 await channel.send(f"Key {key} not found for user {username}.")
                 return
@@ -130,7 +130,7 @@ async def query(spl, channel, user, dir):
             await channel.send(f"Removed {key} for user {username}.")
         case 'delete':
             user_data = rotur.get_user_by("username", username)
-            if not user_data:
+            if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
             rotur.delete_user(user_data)
