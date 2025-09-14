@@ -78,10 +78,10 @@ async def query(spl, channel, user, dir):
             os.remove(temp_path)
         case 'update':
             if len(spl) < 5:
-                await channel.send("Usage: !roturacc <username> update <key> <value>")
+                await channel.send("Usage: !roturacc <username> update <key> <...value>")
                 return
             key = spl[3]
-            value = spl[4]
+            value = " ".join(spl[4:])
             user_data = rotur.get_user_by("username", username)
             if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
