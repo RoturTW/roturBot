@@ -6,6 +6,8 @@ from .helpers import rotur
 from .helpers.quote_generator import quote_generator
 import requests, json, os, random, string, re
 import aiohttp, time
+from io import BytesIO
+from PIL import Image
 import asyncio
 
 from sympy import sympify
@@ -31,6 +33,7 @@ mistium = str(os.getenv('MISTIUM_ID'))
 originOS = str(os.getenv('ORIGIN_SERVER_ID'))
 tavily_token = str(os.getenv('TAVILY'))
 cerebras_token = str(os.getenv('CEREBRAS'))
+avatars_api_base = str(os.getenv('AVATARS_BASE_URL', 'https://avatars.rotur.dev'))
 
 tools = open(os.path.join(_MODULE_DIR, "static", "tools.json"), "r")
 tools = json.load(tools)
@@ -326,6 +329,7 @@ async def user(ctx: discord.Interaction, username: str):
         await ctx.response.send_message('User not found.')
         return
 
+    print(str(user.get('private', False)).lower())
     if (str(user.get('private', False)).lower() == "true"):
         await ctx.response.send_message(embed=discord.Embed(
             title="Private Profile",
@@ -613,31 +617,62 @@ async def unlink(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='syncpfp', description='syncs your pfp from discord to rotur')
 async def syncpfp(ctx: discord.Interaction):
+    # Acknowledge immediately to avoid 3s interaction timeout
+    try:
+        await ctx.response.defer(ephemeral=True, thinking=True)
+    except Exception:
+        pass
+
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
-    if user.get('error') == "User not found" or user is None:
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+    if user is None or user.get('error') == "User not found":
+        await ctx.followup.send("You aren't linked to rotur.", ephemeral=True)
         return
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await ctx.followup.send("No auth token found for your account.", ephemeral=True)
         return
     try:
-        pfp = requests.get(str(ctx.user.display_avatar.url))
-        mime_type = pfp.headers.get("Content-Type", "image/png")
-        b64_data = base64.b64encode(pfp.content).decode("utf-8")
-        data_url = f"data:{mime_type};base64,{b64_data}"
-        resp = requests.patch(
-            "https://social.rotur.dev/users",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"key": "pfp", "value": data_url, "auth": token})
-        )
-        rotur.update_user("update", user.get("username"), "pfp", f"https://avatars.rotur.dev/{user.get('username')}")
-        if resp.status_code == 200:
-            await ctx.response.send_message("Your profile picture has been synced to rotur.")
-        else:
-            await ctx.response.send_message(f"Failed to sync profile picture. Server responded with status {resp.status_code}.")
+        # Fetch user's Discord avatar bytes
+        asset = ctx.user.display_avatar
+        try:
+            avatar_bytes = await asset.read()
+        except Exception:
+            # Fallback to URL fetch if direct read fails
+            async with aiohttp.ClientSession() as session:
+                async with session.get(str(asset.url), timeout=aiohttp.ClientTimeout(total=15)) as r:
+                    r.raise_for_status()
+                    avatar_bytes = await r.read()
+
+        # Convert to JPEG to match server-side decoder expectations
+        img = Image.open(BytesIO(avatar_bytes))
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        # Resize client-side to 256x256 to save bandwidth (server will also resize)
+        img = img.resize((256, 256))
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        jpeg_bytes = buf.getvalue()
+
+        data_url = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
+        payload = {"token": token, "image": data_url}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{avatars_api_base}/rotur-upload-pfp",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=20)
+            ) as resp:
+                if resp.status == 200:
+                    await ctx.followup.send("Your profile picture has been synced to rotur.", ephemeral=True)
+                else:
+                    await ctx.followup.send(
+                        f"Failed to sync profile picture. Server responded with status {resp.status}.",
+                        ephemeral=True,
+                    )
+            rotur.update_user("update", user.get("username"), "pfp", f"{user.get('username')}?nocache={randomString(5)}")
     except Exception as e:
-        await ctx.response.send_message(f"Error syncing profile picture: {str(e)}")
+        # Use followup since we've already deferred
+        await ctx.followup.send(f"Error syncing profile picture: {str(e)}", ephemeral=True)
     return
 
 @allowed_everywhere
@@ -1300,6 +1335,7 @@ async def on_message(message):
             
             if user_id not in activity_data["users"]:
                 rotur_user = rotur.get_user_by('discord_id', user_id)
+                activity_data["users"][user_id] = 0
                 if rotur_user and rotur_user.get('error') != "User not found":
                     credit_amount = get_user_highest_role_credit(message.author)
                     
