@@ -615,6 +615,72 @@ async def unlink(ctx: discord.Interaction):
     return
 
 @allowed_everywhere
+@tree.command(name='refresh_token', description='[EPHEMERAL] Refresh (rotate) your rotur auth token')
+async def refresh_token_cmd(ctx: discord.Interaction):
+    """Rotate the user's rotur auth token via the /me/refresh_token endpoint.
+
+    Returns an ephemeral confirmation and (for convenience) the first / last characters
+    of the new token so the user can verify rotation without fully exposing it in logs.
+    """
+    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    if user is None or user.get('error') == 'User not found':
+        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        return
+
+    old_token = user.get('key')
+    if not old_token:
+        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        return
+
+    try:
+        resp = requests.post(f"https://social.rotur.dev/me/refresh_token?auth={old_token}")
+    except Exception as e:
+        await ctx.response.send_message(f"Error contacting server: {str(e)}", ephemeral=True)
+        return
+
+    status = resp.status_code
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = {"error": f"Non-JSON response (status {status})"}
+
+    if status != 200 or payload.get('error'):
+        err = payload.get('error', f'Server responded with status {status}.')
+        await ctx.response.send_message(f"Failed to refresh token: {err}", ephemeral=True)
+        return
+
+    try:
+        updated = rotur.get_user_by('discord_id', str(ctx.user.id))
+    except Exception:
+        updated = None
+
+    new_token = None
+    if updated and not updated.get('error'):
+        new_token = updated.get('key')
+
+    def mask(tok: str | None):
+        if not tok:
+            return 'unavailable'
+        if len(tok) <= 10:
+            return tok
+        return tok[:4] + '...' + tok[-4:]
+
+    embed = discord.Embed(
+        title='Token Refreshed',
+        description='Your rotur authentication token has been rotated successfully.',
+        color=discord.Color.green()
+    )
+    embed.add_field(name='Old Token (masked)', value=mask(old_token), inline=False)
+    embed.add_field(name='New Token (masked)', value=mask(new_token), inline=False)
+    if new_token == old_token:
+        embed.add_field(name='Notice', value='The token appears unchanged. If this persists, try again later.', inline=False)
+    else:
+        embed.add_field(name='Usage', value='Your token is now refreshed.', inline=False)
+
+    await ctx.response.send_message(embed=embed, ephemeral=True)
+    return
+
+@allowed_everywhere
 @tree.command(name='syncpfp', description='syncs your pfp from discord to rotur')
 async def syncpfp(ctx: discord.Interaction):
     # Acknowledge immediately to avoid 3s interaction timeout
