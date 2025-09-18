@@ -739,7 +739,7 @@ async def marriage_cancel(ctx: discord.Interaction):
         
         if response.status_code == 200:
             embed = discord.Embed(
-                title="� Proposal Cancelled",
+                title="Proposal Cancelled",
                 description="You have cancelled your marriage proposal.",
                 color=discord.Color.orange()
             )
