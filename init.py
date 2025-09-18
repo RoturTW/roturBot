@@ -291,9 +291,13 @@ def allowed_everywhere(command):
     return command
 
 transfer = app_commands.Group(name='transfer', description='Commands related to transferring credits')
+transfer = app_commands.allowed_installs(guilds=True, users=True)(transfer)
+transfer = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(transfer)
 tree.add_command(transfer)
 
 keys = app_commands.Group(name='keys', description='Commands related to user keys')
+keys = app_commands.allowed_installs(guilds=True, users=True)(keys)
+keys = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(keys)
 tree.add_command(keys)
 
 def create_embed_from_user(user):
@@ -546,6 +550,8 @@ async def following_list(ctx: discord.Interaction):
 
 # Marriage Commands Group
 marriage = app_commands.Group(name='marriage', description='Commands related to rotur marriage system')
+marriage = app_commands.allowed_installs(guilds=True, users=True)(marriage)
+marriage = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(marriage)
 tree.add_command(marriage)
 
 @allowed_everywhere
