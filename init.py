@@ -710,7 +710,7 @@ async def marriage_status(ctx: discord.Interaction):
             elif status == 'married':
                 embed = discord.Embed(
                     title="💕 Married",
-                    description=f"You are married to **{partner}**! You share a combined credit balance.",
+                    description=f"You are married to **{partner}**!",
                     color=discord.Color.pink()
                 )
             else:
