@@ -8,11 +8,11 @@ def bio_from_obj(obj):
         f'{tier}\n'
         f'Credits: {obj.get("currency", "0")}\n'
         f'Account: #{obj.get("index", "unknown")}\n\n'
-        f'{obj.get("bio", "")}\n'
     )
     if obj.get("married_to"):
         string += f'💍 Married to {obj["married_to"]}\n'
-    
+
+    string += f'{obj.get("bio", "")}\n'
     return string
 
 def get_user_by(key, value):

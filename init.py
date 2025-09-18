@@ -303,10 +303,14 @@ def create_embed_from_user(user):
         description=rotur.bio_from_obj(user),
         color=discord.Color.blue()
     )
-    if user.get('pfp'):
-        embed.set_thumbnail(url=f"https://avatars.rotur.dev/{user.get('username')}?nocache={randomString(5)}")
-    if user.get('banner'):
-        embed.set_image(url=f"https://avatars.rotur.dev/.banners/{user.get('username')}?nocache={randomString(5)}")
+    
+    username = user.get('username')
+    if username and isinstance(username, str) and username.strip():
+        if user.get('pfp'):
+            embed.set_thumbnail(url=f"https://avatars.rotur.dev/{username}?nocache={randomString(5)}")
+        if user.get('banner'):
+            embed.set_image(url=f"https://avatars.rotur.dev/.banners/{username}?nocache={randomString(5)}")
+    
     return embed
 
 @allowed_everywhere
