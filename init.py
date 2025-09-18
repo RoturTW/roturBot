@@ -540,6 +540,192 @@ async def following_list(ctx: discord.Interaction):
     except Exception as e:
         await ctx.response.send_message(f"Error retrieving following list: {str(e)}", ephemeral=True)
 
+# Marriage Commands Group
+marriage = app_commands.Group(name='marriage', description='Commands related to rotur marriage system')
+tree.add_command(marriage)
+
+@marriage.command(name='propose', description='Propose marriage to another rotur user')
+@app_commands.describe(username='Username of the person you want to propose to')
+async def marriage_propose(ctx: discord.Interaction, username: str):
+    # Get user's rotur account
+    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    if user_data is None or user_data.get('error') == "User not found":
+        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        return
+    
+    auth_key = user_data.get('key')
+    if not auth_key:
+        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        return
+    
+    try:
+        # Send proposal request
+        response = requests.post(f"https://social.rotur.dev/marriage/propose/{username}?auth={auth_key}")
+        result = response.json()
+        
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="💍 Marriage Proposal Sent!",
+                description=f"You have proposed to **{username}**! They can accept or reject your proposal.",
+                color=discord.Color.pink()
+            )
+            await ctx.response.send_message(embed=embed)
+        else:
+            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error sending proposal: {str(e)}", ephemeral=True)
+
+@marriage.command(name='accept', description='Accept a pending marriage proposal')
+async def marriage_accept(ctx: discord.Interaction):
+    # Get user's rotur account
+    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    if user_data is None or user_data.get('error') == "User not found":
+        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        return
+    
+    auth_key = user_data.get('key')
+    if not auth_key:
+        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        return
+    
+    try:
+        # Accept proposal
+        response = requests.post(f"https://social.rotur.dev/marriage/accept?auth={auth_key}")
+        result = response.json()
+        
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="💕 Marriage Accepted!",
+                description="Congratulations! You are now married!",
+                color=discord.Color.pink()
+            )
+            await ctx.response.send_message(embed=embed)
+        else:
+            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error accepting proposal: {str(e)}", ephemeral=True)
+
+@marriage.command(name='reject', description='Reject a pending marriage proposal')
+async def marriage_reject(ctx: discord.Interaction):
+    # Get user's rotur account
+    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    if user_data is None or user_data.get('error') == "User not found":
+        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        return
+    
+    auth_key = user_data.get('key')
+    if not auth_key:
+        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        return
+    
+    try:
+        # Reject proposal
+        response = requests.post(f"https://social.rotur.dev/marriage/reject?auth={auth_key}")
+        result = response.json()
+        
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="💔 Marriage Proposal Rejected",
+                description="You have rejected the marriage proposal.",
+                color=discord.Color.red()
+            )
+            await ctx.response.send_message(embed=embed)
+        else:
+            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error rejecting proposal: {str(e)}", ephemeral=True)
+
+@marriage.command(name='divorce', description='Divorce your current spouse')
+async def marriage_divorce(ctx: discord.Interaction):
+    # Get user's rotur account
+    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    if user_data is None or user_data.get('error') == "User not found":
+        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        return
+    
+    auth_key = user_data.get('key')
+    if not auth_key:
+        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        return
+    
+    try:
+        # Divorce request
+        response = requests.post(f"https://social.rotur.dev/marriage/divorce?auth={auth_key}")
+        result = response.json()
+        
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="💔 Divorce Processed",
+                description="You are now divorced.",
+                color=discord.Color.orange()
+            )
+            await ctx.response.send_message(embed=embed)
+        else:
+            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error processing divorce: {str(e)}", ephemeral=True)
+
+@marriage.command(name='status', description='Check your marriage status')
+async def marriage_status(ctx: discord.Interaction):
+    # Get user's rotur account
+    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    if user_data is None or user_data.get('error') == "User not found":
+        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        return
+    
+    auth_key = user_data.get('key')
+    if not auth_key:
+        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        return
+    
+    try:
+        # Get marriage status
+        response = requests.get(f"https://social.rotur.dev/marriage/status?auth={auth_key}")
+        result = response.json()
+        
+        if response.status_code == 200:
+            status = result.get('status', 'single')
+            partner = result.get('partner', '')
+            
+            if status == 'single':
+                embed = discord.Embed(
+                    title="💔 Single",
+                    description="You are currently single and available for marriage.",
+                    color=discord.Color.blue()
+                )
+            elif status == 'proposed':
+                proposer = result.get('proposer', '')
+                if user_data.get('username') == proposer:
+                    embed = discord.Embed(
+                        title="💍 Proposal Sent",
+                        description=f"You have sent a marriage proposal to **{partner}**. Waiting for their response.",
+                        color=discord.Color.yellow()
+                    )
+                else:
+                    embed = discord.Embed(
+                        title="💍 Proposal Received",
+                        description=f"**{partner}** has proposed to you! Use `/marriage accept` or `/marriage reject` to respond.",
+                        color=discord.Color.yellow()
+                    )
+            elif status == 'married':
+                embed = discord.Embed(
+                    title="💕 Married",
+                    description=f"You are married to **{partner}**! You share a combined credit balance.",
+                    color=discord.Color.pink()
+                )
+            else:
+                embed = discord.Embed(
+                    title="❓ Unknown Status",
+                    description=f"Marriage status: {status}",
+                    color=discord.Color.greyple()
+                )
+            
+            await ctx.response.send_message(embed=embed)
+        else:
+            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error checking marriage status: {str(e)}", ephemeral=True)
+
 @tree.command(name='here', description='Ping people in your thread')
 async def here(ctx: discord.Interaction):
     if ctx.guild is None or ctx.channel is None or str(ctx.guild.id) != originOS:
