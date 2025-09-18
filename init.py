@@ -560,7 +560,7 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
     
     try:
         # Send proposal request
-        response = requests.post(f"https://social.rotur.dev/marriage/propose/{username}?auth={auth_key}")
+        response = requests.post(f"https://social.rotur.dev/marriage/propose/{username}?auth={auth_key}", timeout=10)
         result = response.json()
         
         if response.status_code == 200:
@@ -590,7 +590,7 @@ async def marriage_accept(ctx: discord.Interaction):
     
     try:
         # Accept proposal
-        response = requests.post(f"https://social.rotur.dev/marriage/accept?auth={auth_key}")
+        response = requests.post(f"https://social.rotur.dev/marriage/accept?auth={auth_key}", timeout=10)
         result = response.json()
         
         if response.status_code == 200:
@@ -620,7 +620,7 @@ async def marriage_reject(ctx: discord.Interaction):
     
     try:
         # Reject proposal
-        response = requests.post(f"https://social.rotur.dev/marriage/reject?auth={auth_key}")
+        response = requests.post(f"https://social.rotur.dev/marriage/reject?auth={auth_key}", timeout=10)
         result = response.json()
         
         if response.status_code == 200:
@@ -650,7 +650,7 @@ async def marriage_divorce(ctx: discord.Interaction):
     
     try:
         # Divorce request
-        response = requests.post(f"https://social.rotur.dev/marriage/divorce?auth={auth_key}")
+        response = requests.post(f"https://social.rotur.dev/marriage/divorce?auth={auth_key}", timeout=10)
         result = response.json()
         
         if response.status_code == 200:
@@ -680,7 +680,7 @@ async def marriage_status(ctx: discord.Interaction):
     
     try:
         # Get marriage status
-        response = requests.get(f"https://social.rotur.dev/marriage/status?auth={auth_key}")
+        response = requests.get(f"https://social.rotur.dev/marriage/status?auth={auth_key}", timeout=10)
         result = response.json()
         
         if response.status_code == 200:
