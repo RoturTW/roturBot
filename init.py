@@ -548,6 +548,7 @@ async def following_list(ctx: discord.Interaction):
 marriage = app_commands.Group(name='marriage', description='Commands related to rotur marriage system')
 tree.add_command(marriage)
 
+@allowed_everywhere
 @marriage.command(name='propose', description='Propose marriage to another rotur user')
 @app_commands.describe(username='Username of the person you want to propose to')
 async def marriage_propose(ctx: discord.Interaction, username: str):
@@ -579,6 +580,7 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
     except Exception as e:
         await ctx.response.send_message(f"Error sending proposal: {str(e)}", ephemeral=True)
 
+@allowed_everywhere
 @marriage.command(name='accept', description='Accept a pending marriage proposal')
 async def marriage_accept(ctx: discord.Interaction):
     # Get user's rotur account
@@ -609,6 +611,7 @@ async def marriage_accept(ctx: discord.Interaction):
     except Exception as e:
         await ctx.response.send_message(f"Error accepting proposal: {str(e)}", ephemeral=True)
 
+@allowed_everywhere
 @marriage.command(name='reject', description='Reject a pending marriage proposal')
 async def marriage_reject(ctx: discord.Interaction):
     # Get user's rotur account
@@ -639,6 +642,7 @@ async def marriage_reject(ctx: discord.Interaction):
     except Exception as e:
         await ctx.response.send_message(f"Error rejecting proposal: {str(e)}", ephemeral=True)
 
+@allowed_everywhere
 @marriage.command(name='divorce', description='Divorce your current spouse')
 async def marriage_divorce(ctx: discord.Interaction):
     # Get user's rotur account
@@ -669,6 +673,7 @@ async def marriage_divorce(ctx: discord.Interaction):
     except Exception as e:
         await ctx.response.send_message(f"Error processing divorce: {str(e)}", ephemeral=True)
 
+@allowed_everywhere
 @marriage.command(name='status', description='Check your marriage status')
 async def marriage_status(ctx: discord.Interaction):
     # Get user's rotur account
