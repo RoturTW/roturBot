@@ -6,6 +6,7 @@ from .helpers import rotur
 from .helpers.quote_generator import quote_generator
 import requests, json, os, random, string, re
 import aiohttp, time
+import urllib.parse
 from io import BytesIO
 from PIL import Image
 import asyncio
@@ -18,6 +19,10 @@ try:
 except Exception:
     ofsf = None
 from datetime import datetime, timezone, timedelta
+
+# Status sync rate limiting
+status_sync_cache = {}  # {user_id: {'last_status': str, 'last_sync': timestamp}}
+STATUS_SYNC_COOLDOWN = 5  # seconds between syncs for the same user
 
 def randomString(length):
     """Generate a random string of specified length"""
@@ -262,6 +267,8 @@ async def daily_credits_scheduler():
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
+intents.presences = True
+intents.members = True
 
 client = discord.Client(intents=intents)
 
@@ -2292,6 +2299,69 @@ def run(parent_context_func=None):
         client.run(token)
     except Exception as e:
         print(f"Error running bot: {e}")
+
+
+@client.event
+async def on_presence_update(before, after):
+    """Sync Discord status changes to Rotur for linked users."""
+    try:
+        status_changed = before.status != after.status
+        activities_changed = before.activities != after.activities
+        
+        if not status_changed and not activities_changed:
+            return
+        
+        user_data = rotur.get_user_by('discord_id', str(after.id))
+        if user_data is None or user_data.get('error') == "User not found":
+            return
+        
+        auth_key = user_data.get('key')
+        if not auth_key:
+            return
+        
+        custom_status = None
+        for activity in after.activities:
+            if isinstance(activity, discord.CustomActivity):
+                if activity.name:
+                    custom_status = activity.name
+                    break
+        
+        if not custom_status:
+            return
+        
+        status_text = f"{custom_status}"
+        
+        user_id = str(after.id)
+        current_time = time.time()
+        
+        if user_id in status_sync_cache:
+            cache_entry = status_sync_cache[user_id]
+            
+            if cache_entry['last_status'] == status_text:
+                return
+
+            if current_time - cache_entry['last_sync'] < STATUS_SYNC_COOLDOWN:
+                return
+        
+        status_sync_cache[user_id] = {
+            'last_status': status_text,
+            'last_sync': current_time
+        }
+        
+        encoded_status = urllib.parse.quote(status_text)
+        
+        try:
+            response = requests.get(
+                f"https://social.rotur.dev/status/update?auth={auth_key}&content={encoded_status}",
+                timeout=10
+            )
+            if response.status_code == 200:
+                print(f"Synced status for {user_data.get('username')}: {status_text}")
+        except Exception as e:
+            print(f"Failed to sync status for user {after.id}: {e}")
+            
+    except Exception as e:
+        print(f"Error in on_presence_update: {e}")
 
 
 @client.event
