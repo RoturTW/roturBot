@@ -1556,7 +1556,7 @@ async def on_message(message):
                 return
             await channel.send("https://origin.mistium.com")
         case '!send':
-            if message.guild is None:
+            if message.guild is None and str(message.author.id) == "1155814166976811048": # rattus paid me credits for this
                 general_channel = client.get_channel(1338555310335463557)  # rotur general
                 if general_channel and isinstance(general_channel, discord.TextChannel):
                     content = message.content[len('!send'):].strip()
