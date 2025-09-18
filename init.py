@@ -548,7 +548,7 @@ tree.add_command(marriage)
 @app_commands.describe(username='Username of the person you want to propose to')
 async def marriage_propose(ctx: discord.Interaction, username: str):
     # Get user's rotur account
-    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -578,7 +578,7 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
 @marriage.command(name='accept', description='Accept a pending marriage proposal')
 async def marriage_accept(ctx: discord.Interaction):
     # Get user's rotur account
-    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -608,7 +608,7 @@ async def marriage_accept(ctx: discord.Interaction):
 @marriage.command(name='reject', description='Reject a pending marriage proposal')
 async def marriage_reject(ctx: discord.Interaction):
     # Get user's rotur account
-    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -638,7 +638,7 @@ async def marriage_reject(ctx: discord.Interaction):
 @marriage.command(name='divorce', description='Divorce your current spouse')
 async def marriage_divorce(ctx: discord.Interaction):
     # Get user's rotur account
-    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -668,7 +668,7 @@ async def marriage_divorce(ctx: discord.Interaction):
 @marriage.command(name='status', description='Check your marriage status')
 async def marriage_status(ctx: discord.Interaction):
     # Get user's rotur account
-    user_data = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
