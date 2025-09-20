@@ -204,8 +204,9 @@ async def handle_counting_message(message, channel):
     
     expected_count = state["current_count"] + 1
     user_stats = _get_or_create_user(state, user_id)
-    
-    if number == expected_count and number != True and number != False:
+    if number == True or number == False:
+        return True;
+    if number == expected_count:
         if state["last_user"] == user_id:
             try:
                 await message.author.send(
