@@ -1908,10 +1908,44 @@ async def on_reaction_add(reaction, user):
                 )
                 embed.set_thumbnail(url=reaction.message.author.display_avatar.url)
                 embed.add_field(name="Jump to Message", value=f"[Click here]({reaction.message.jump_url})", inline=False)
+                file_to_send = None
                 if reaction.message.attachments:
-                    embed.set_image(url=reaction.message.attachments[0].url)
+                    attachment = reaction.message.attachments[0]
+                    try:
+                        is_spoiler = False
+                        if hasattr(attachment, 'is_spoiler'):
+                            try:
+                                val = attachment.is_spoiler
+                                if callable(val):
+                                    is_spoiler = await val() if asyncio.iscoroutinefunction(val) else val()
+                                else:
+                                    is_spoiler = bool(val)
+                            except Exception:
+                                is_spoiler = False
+                        if not is_spoiler:
+                            filename = getattr(attachment, 'filename', '') or ''
+                            if isinstance(filename, str) and filename.startswith('SPOILER_'):
+                                is_spoiler = True
+
+                        data = await attachment.read()
+                        filename = getattr(attachment, 'filename', None) or 'attachment'
+                        if is_spoiler and not filename.startswith('SPOILER_'):
+                            filename = f"SPOILER_{filename}"
+
+                        file_to_send = discord.File(BytesIO(data), filename=filename)
+
+                        embed.set_image(url=f"attachment://{filename}")
+                    except Exception:
+                        try:
+                            embed.set_image(url=attachment.url)
+                        except Exception:
+                            pass
+
                 try:
-                    posted = await target_channel.send(embed=embed)
+                    if file_to_send:
+                        posted = await target_channel.send(embed=embed, file=file_to_send)
+                    else:
+                        posted = await target_channel.send(embed=embed)
                     target_message_url = posted.jump_url
                 except Exception:
                     target_message_url = None
