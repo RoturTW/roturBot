@@ -1955,6 +1955,13 @@ async def on_reaction_add(reaction, user):
             else:
                 await reaction.message.reply(f"{reaction.message.author.mention} has been roturboarded!")
         return
+
+    if reaction.emoji == '💀' and reaction.count >= 10:
+        try:
+            await reaction.message.reply("You have been scheduled to be killed by request of 10 skull emojis")
+        except:
+            pass
+        return
     
     if reaction.emoji == '🤫' and reaction.count >= 4:
         try:
