@@ -1636,43 +1636,6 @@ async def manual_daily_credits(ctx: discord.Interaction):
         )
         await ctx.followup.send(embed=embed)
 
-@allowed_everywhere
-@tree.command(name='daily_activity', description='Check today\'s daily activity status')
-async def daily_activity_status(ctx: discord.Interaction):
-    try:
-        activity_data = load_daily_activity()
-        current_date = get_current_date()
-        
-        if activity_data.get("date") != current_date:
-            embed = discord.Embed(
-                title="📊 Daily Activity Status",
-                description="No activity recorded for today yet.",
-                color=discord.Color.blue()
-            )
-        else:
-            user_count = len(activity_data.get("users", {}))
-            total_credits = sum(activity_data.get("users", {}).values())
-            
-            embed = discord.Embed(
-                title="📊 Daily Activity Status",
-                description=f"**{user_count}** users have been active today and will earn a total of **{total_credits:.2f}** credits at midnight.",
-                color=discord.Color.green()
-            )
-            embed.add_field(name="Active Users", value=str(user_count), inline=True)
-            embed.add_field(name="Total Credits Pending", value=f"{total_credits:.2f}", inline=True)
-            embed.add_field(name="Date", value=current_date, inline=True)
-            
-        embed.set_footer(text="Credits are distributed automatically at midnight UTC")
-        await ctx.response.send_message(embed=embed, ephemeral=True)
-        
-    except Exception as e:
-        embed = discord.Embed(
-            title="❌ Error",
-            description=f"Could not retrieve daily activity status: {str(e)}",
-            color=discord.Color.red()
-        )
-        await ctx.response.send_message(embed=embed, ephemeral=True)
-
 @client.event
 async def on_message(message):
     if message.author == client.user:
