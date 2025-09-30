@@ -1742,9 +1742,9 @@ async def on_message(message):
         return
 
     if (message.reference and 
-        message.reference.message_id and 
+        message.reference.message_id and
         client.user and 
-        client.user.mentioned_in(message)):
+        f"<@{client.user.id}>" in message.content):
         
         try:
             referenced_message = await message.channel.fetch_message(message.reference.message_id)
@@ -1774,7 +1774,10 @@ async def on_message(message):
             await message.channel.send("❌ Error generating quote.", reference=message, mention_author=False)
             return
 
-    if client.user and client.user.mentioned_in(message) and str(message.author.id) == mistium and (not message.reference):
+    if (client.user and
+        (f"<@{client.user.id}>" in message.content) and
+        (str(message.author.id) == mistium) and
+        not message.reference):
         content = message.content
         prompt = re.sub(r"<@[0-9]+>", "", content).strip()
 
