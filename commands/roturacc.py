@@ -133,5 +133,8 @@ async def query(spl, channel, user, dir):
             if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
-            rotur.delete_user(user_data)
-            await channel.send(f"Deleted user {username} from your system.")
+            resp = rotur.delete_user(user_data.get("username"))
+            if "error" in resp:
+                await channel.send(resp.get("error"))
+            else:
+                await channel.send(f"Deleted user {username} from your system.")
