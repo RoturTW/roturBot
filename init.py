@@ -5,7 +5,7 @@ from .commands import stats, roturacc, counting
 from .helpers import rotur
 from .helpers.quote_generator import quote_generator
 import requests, json, os, random, string, re
-import aiohttp, time
+import aiohttp, time, logging
 import urllib.parse
 from io import BytesIO
 from PIL import Image
@@ -1922,7 +1922,7 @@ async def on_reaction_add(reaction, user):
                 await reaction.message.reply(f"{reaction.message.author.mention} has been roturboarded!")
         return
     
-    if reaction.emoji == '🤫' and reaction.count >= 4:
+    if reaction.emoji == '🤫' and reaction.count >= 4 and False:
         try:
             created_at = reaction.message.created_at
             if created_at is None:
