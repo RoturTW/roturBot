@@ -20,6 +20,8 @@ except Exception:
     ofsf = None
 from datetime import datetime, timezone, timedelta
 
+logging.basicConfig(level=logging.DEBUG)
+
 # Status sync rate limiting
 status_sync_cache = {}  # {user_id: {'last_status': str, 'last_sync': timestamp}}
 STATUS_SYNC_COOLDOWN = 5  # seconds between syncs for the same user
@@ -1052,7 +1054,7 @@ async def syncpfp(ctx: discord.Interaction):
 
 @allowed_everywhere
 @tree.command(name='gamble', description='Gamble your credits for a chance to win more')
-async def gamble(ctx: discord.Interaction, amount: int):
+async def gamble(ctx: discord.Interaction, amount: float):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
