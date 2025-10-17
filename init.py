@@ -1741,8 +1741,8 @@ async def on_message(message):
 
     if (client.user and
         (f"<@{client.user.id}>" in message.content) and
-        (str(message.author.id) == mistium) and
-        not message.reference):
+        not message.reference and
+        any(role.id == 1224561760518799370 for role in message.author.roles)):
         content = message.content
         prompt = re.sub(r"<@[0-9]+>", "", content).strip()
 
