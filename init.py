@@ -1742,7 +1742,7 @@ async def on_message(message):
     if (client.user and
         (f"<@{client.user.id}>" in message.content) and
         not message.reference and
-        any(role.id == 1224561760518799370 for role in message.author.roles)):
+        any(str(role.id) == "1171799529822093322" for role in message.author.roles)):
         content = message.content
         prompt = re.sub(r"<@[0-9]+>", "", content).strip()
 
