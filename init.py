@@ -1140,12 +1140,12 @@ async def created(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='balance', description='Check your current credit balance')
 async def balance(ctx: discord.Interaction):
-    user = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur")
+        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
         return
     
-    balance = user.get('currency', 0)
+    balance = user.get('sys.currency', 0)
     embed = discord.Embed(
         title=f"You have {balance} credits",
     )
