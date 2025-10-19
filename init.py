@@ -403,9 +403,9 @@ async def totalusers(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='usage', description='Check your file system usage')
 async def usage(ctx: discord.Interaction):
-    user = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.')
+        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
         return
     if ofsf is None:
         await ctx.response.send_message("The file system usage service is not available right now.")
@@ -1120,9 +1120,9 @@ async def all_keys(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='created', description='Get the creation date of your account')
 async def created(ctx: discord.Interaction):
-    user = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur")
+        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
         return
 
     created_at = user.get('created', "Unknown")
@@ -2096,9 +2096,6 @@ async def call_tool(name: str, arguments: dict) -> str:
                         "message_id": msg.id
                     })
                 return parseMessages(msgs[::-1])
-            case "search_users":
-                async with session.get(f"https://social.rotur.dev/search_users?limit=20&q={arguments.get('name')}") as resp:
-                    return json.dumps(await resp.json())
             case "search_posts":
                 async with session.get(f"https://social.rotur.dev/search_posts?limit=20&q={arguments.get('query')}") as resp:
                     return json.dumps(await resp.json())
