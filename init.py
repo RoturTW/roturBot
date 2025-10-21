@@ -563,6 +563,61 @@ marriage = app_commands.allowed_installs(guilds=True, users=True)(marriage)
 marriage = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(marriage)
 tree.add_command(marriage)
 
+@tree.command(name='blocked', description='View users you are blocking')
+async def blocked(ctx: discord.Interaction):
+    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    if user is None or user.get('error') == "User not found":
+        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        return
+    blocked = user.get("sys.blocked")
+    if not blocked:
+        await ctx.response.send_message("You are not blocking anyone.")
+        return
+
+    embed = discord.Embed(title="Users You Are Blocking", description="\n".join(blocked))
+    await ctx.response.send_message(embed=embed)
+
+@tree.command(name='block', description='Block a user on rotur')
+@app_commands.describe(username='The username of the user to block')
+async def block(ctx: discord.Interaction, username: str):
+    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    if user is None or user.get('error') == "User not found":
+        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        return
+    token = user.get("key")
+    if not token:
+        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        return
+    try:
+        resp = requests.post(f"https://api.rotur.dev/me/block/{username}?auth={token}")
+        if resp.status_code == 200:
+            await ctx.response.send_message(f"You are now blocking {username}.")
+        else:
+            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error blocking user: {str(e)}", ephemeral=True)
+
+@allowed_everywhere
+@tree.command(name='unblock', description='Unblock a user on rotur')
+@app_commands.describe(username='The username of the user to unblock')
+async def unblock(ctx: discord.Interaction, username: str):
+    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    if user is None or user.get('error') == "User not found":
+        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        return
+    token = user.get("key")
+    if not token:
+        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        return
+    try:
+        resp = requests.post(f"https://api.rotur.dev/me/unblock/{username}?auth={token}")
+        if resp.status_code == 200:
+            await ctx.response.send_message(f"You are no longer blocking {username}.")
+        else:
+            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error unblocking user: {str(e)}", ephemeral=True)
+
 @allowed_everywhere
 @marriage.command(name='propose', description='Propose marriage to another rotur user')
 @app_commands.describe(username='Username of the person you want to propose to')
