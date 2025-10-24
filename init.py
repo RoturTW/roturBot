@@ -1717,7 +1717,8 @@ async def on_message(message):
         print(f"[ForwardError] Failed to forward message {message.id}: {e}")
 
     if (message.guild is not None and 
-        not message.author.bot):
+        not message.author.bot and
+        str(message.guild.id) == originOS):
         
         try:
             activity_data = load_daily_activity()
@@ -1729,8 +1730,8 @@ async def on_message(message):
             user_id = str(message.author.id)
             
             if user_id not in activity_data["users"]:
-                rotur_user = rotur.get_user_by('discord_id', user_id)
                 activity_data["users"][user_id] = 0
+                rotur_user = rotur.get_user_by('discord_id', user_id)
                 if rotur_user and rotur_user.get('error') != "User not found":
                     credit_amount = get_user_highest_role_credit(message.author)
                     
