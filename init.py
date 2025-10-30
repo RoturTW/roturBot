@@ -1329,6 +1329,9 @@ async def get_key(ctx: discord.Interaction, key: str):
     if key not in user:
         await ctx.response.send_message(f"Key '{key}' not found in your account.", ephemeral=True)
         return
+
+    if key in ["key", "password"]:
+        await ctx.response.send_message(f"You cannot display this key, it contains sensitive information", ephemeral=True)
     
     value = user[key]
     embed = discord.Embed(
