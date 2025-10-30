@@ -20,7 +20,7 @@ except Exception:
     ofsf = None
 from datetime import datetime, timezone, timedelta
 
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 # Status sync rate limiting
 status_sync_cache = {}  # {user_id: {'last_status': str, 'last_sync': timestamp}}
@@ -1098,7 +1098,7 @@ async def syncpfp(ctx: discord.Interaction):
                     await ctx.followup.send("Your profile picture has been synced to rotur.", ephemeral=True)
                 else:
                     await ctx.followup.send(
-                        f"Failed to sync profile picture. Server responded with status {resp.status}.",
+                        f"Failed to sync profile picture. Server responded with status {resp.status}, message: {await resp.text()}",
                         ephemeral=True,
                     )
             rotur.update_user("update", user.get("username"), "pfp", f"{user.get('username')}?nocache={randomString(5)}")
