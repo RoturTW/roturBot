@@ -9,7 +9,7 @@ import aiohttp, time, logging
 import urllib.parse
 from io import BytesIO
 from PIL import Image
-import asyncio
+import asyncio, psutil
 
 from sympy import sympify
 import base64, hashlib
@@ -247,6 +247,40 @@ async def process_daily_credits():
     print(f"Daily credits reset: Yesterday had {users_awarded} users, {total_credits_awarded:.2f} total credits")
     last_daily_announcement_date = current_date
 
+async def battery_notifier():
+    """
+    Schedule battery notifications
+    Sends a dm to Mistium if the laptop is unplugged from power
+    """
+
+    was_plugged = psutil.sensors_battery().power_plugged
+    while not client.is_closed():
+        try:
+            battery = psutil.sensors_battery()
+            if was_plugged and not battery.power_plugged:
+                # send dm to mistium
+                try:
+                    user = client.get_user(int(mistium))
+                    if user is not None:
+                        await user.send("rotur has been unplugged")
+                except Exception:
+                    pass
+            elif not was_plugged and battery.power_plugged:
+                # send dm to mistium
+                try:
+                    user = client.get_user(int(mistium))
+                    if user is not None:
+                        await user.send("rotur has been plugged in")
+                except Exception:
+                    pass
+            was_plugged = battery.power_plugged
+            await asyncio.sleep(2)
+
+            
+        except Exception as e:
+            print(f"Error in battery notifier: {str(e)}")
+            await asyncio.sleep(3600)
+
 async def daily_credits_scheduler():
     """Schedule daily credits processing at midnight UTC"""
     await client.wait_until_ready()
@@ -276,6 +310,7 @@ client = discord.Client(intents=intents)
 
 last_daily_announcement_date = None
 daily_scheduler_started = False
+battery_notifier_started = False
 
 tree = app_commands.CommandTree(client)
 
@@ -2119,6 +2154,13 @@ async def on_ready():
         print(f'Synced {len(synced)} command(s)')
     except Exception as e:
         print(f'Failed to sync commands: {e}')
+    global battery_notifier_started
+    if not battery_notifier_started:
+        asyncio.create_task(battery_notifier())
+        battery_notifier_started = True
+        print('Battery notifier started')
+    else:
+        print('Battery notifier already running; skipping new task')
     global daily_scheduler_started
     if not daily_scheduler_started:
         asyncio.create_task(daily_credits_scheduler())
