@@ -5,7 +5,7 @@ from ..helpers import rotur
 MISTIUM_ID = "603952506330021898"
 
 async def query(spl, channel, user, dir):
-    restrictedKeys = ["username", "max_size", "created", "id", "sys.currency"]
+    restrictedKeys = ["username", "max_size", "created", "id", "sys.currency", "sys.subscription"]
 
     with open(os.path.join(dir, '..', 'systems.json'), 'r') as f:
         systems = json.load(f)
