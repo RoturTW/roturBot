@@ -1,5 +1,5 @@
 import json, os, discord
-import ofsf
+import ofsf, time
 from ..helpers import rotur
 
 MISTIUM_ID = "603952506330021898"
@@ -37,7 +37,8 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] size",
                 "!roturacc [name] delete",
                 "!roturacc [name] token",
-                "!roturacc [name] refresh_token"
+                "!roturacc [name] refresh_token",
+                "!roturacc [name] sub <tier> - only mistium can add subscriptions"
             ]
             await channel.send("\n".join(lines))
             return
@@ -139,3 +140,21 @@ async def query(spl, channel, user, dir):
                 await channel.send(resp.get("error"))
             else:
                 await channel.send(f"Deleted user {username} from your system.")
+        case 'sub':
+            if not isMistium:
+                await channel.send("Only mistium can add subscriptions")
+                return
+            username = spl[1]
+            sub = spl[3]
+            if username == "" or sub == "":
+                await channel.send("Usage: !roturacc <username> add_sub <subscription>")
+                return
+            user_data = rotur.get_user_by("username", username)
+            if (not user_data or user_data.get("username", "") == "") or (not isMistium and user_data.get("system") != user_system["name"]):
+                await channel.send(f"User {username} not found in your system.")
+                return
+            resp = rotur.add_subscription(username, sub)
+            if "error" in resp:
+                await channel.send(resp.get("error"))
+            else:
+                await channel.send(f"Added subscription {sub} to {username} for 30 days")

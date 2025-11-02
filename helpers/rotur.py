@@ -24,6 +24,10 @@ def update_user(type, username, key=None, value=None):
     response = requests.post('https://social.rotur.dev/admin/update_user', json=user_data, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
     return response.json()
 
+def add_subscription(username, tier):
+    response = requests.post('https://social.rotur.dev/admin/set_sub', json={"username": username, "tier": tier}, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
+    return response.json()
+
 def delete_user(username):
     response = requests.post('https://social.rotur.dev/admin/delete_user', json={"username": username}, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
     return response.json()
