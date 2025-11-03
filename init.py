@@ -605,6 +605,7 @@ async def subscribe(ctx: discord.Interaction):
         return
     if user.get("sys.subscription", {}).get("tier", "Free") != "Free":
         await ctx.response.send_message("You already have an active subscription.", ephemeral=True)
+        return
     try:
         resp = requests.get("https://social.rotur.dev/keys/buy/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
         if resp.status_code == 200:
@@ -627,6 +628,7 @@ async def unsubscribe(ctx: discord.Interaction):
         return
     if user.get("sys.subscription", {}).get("tier", "Free") != "originPlus":
         await ctx.response.send_message("You are not subscribed to originPlus.", ephemeral=True)
+        return
     try:
         resp = requests.delete("https://social.rotur.dev/keys/cancel/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
         if resp.status_code == 200:
