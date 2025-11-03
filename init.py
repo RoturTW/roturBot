@@ -1336,7 +1336,6 @@ async def transfer_discord(ctx: discord.Interaction, discord_user: discord.User,
             headers={"Content-Type": "application/json"},
             data=json.dumps({"to": to_user["username"], "amount": amount, "note": note})
         )
-        print(json.dumps(resp.json(), indent=2))
         if resp.status_code == 200:
             await ctx.response.send_message(f"Successfully transferred {amount} credits to {to_user["username"]}.")
         else:
@@ -1784,6 +1783,20 @@ async def on_message(message):
 
     if message.guild is not None and str(message.guild.id) == "1337900749924995104":
         return
+    
+    if message.type == discord.MessageType.premium_guild_subscription:
+        # give the user 10 credits if they are linked and reply
+        user = rotur.get_user_by('discord_id', str(message.author.id))
+        if user is None or user.get('error') == "User not found":
+            return
+        token = user.get("key")
+        if not token:
+            return
+        try:
+            rotur.transfer_credits("rotur", user.get("username"), 10)
+            await message.reply("Granted 10 credits to your account.")
+        except Exception as e:
+            print(f"Error granting credits: {e}")
 
     FORWARD_CHANNEL_ID = 1337983795399495690
     try:
