@@ -189,7 +189,7 @@ async def handle_counting_message(message, channel):
     
     state = get_channel_state(str(channel.id))
 
-    if content.startswith("!set_count"):
+    if content.startswith("!set_count") and user_id == "603952506330021898":
         number = content.split(" ")[1]
         try:
             state["current_count"] = int(number)
