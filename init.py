@@ -614,6 +614,28 @@ async def subscribe(ctx: discord.Interaction):
     except Exception as e:
         await ctx.response.send_message(f"Error subscribing to originPlus: {str(e)}", ephemeral=True)
 
+@allowed_everywhere
+@tree.command(name='unsubscribe', description='Unsubscribe from originPlus')
+async def unsubscribe(ctx: discord.Interaction):
+    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    if user is None or user.get('error') == "User not found":
+        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        return
+    token = user.get("key")
+    if not token:
+        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        return
+    if user.get("sys.subscription", {}).get("tier", "Free") != "originPlus":
+        await ctx.response.send_message("You are not subscribed to originPlus.", ephemeral=True)
+    try:
+        resp = requests.delete("https://social.rotur.dev/keys/cancel/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
+        if resp.status_code == 200:
+            await ctx.response.send_message("You have successfully unsubscribed from originPlus.")
+        else:
+            await ctx.response.send_message(f"Failed to unsubscribe. Server responded with status {resp.status_code}.")
+    except Exception as e:
+        await ctx.response.send_message(f"Error unsubscribing from originPlus: {str(e)}", ephemeral=True)
+
 # Marriage Commands Group
 marriage = app_commands.Group(name='marriage', description='Commands related to rotur marriage system')
 marriage = app_commands.allowed_installs(guilds=True, users=True)(marriage)
