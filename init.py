@@ -611,7 +611,7 @@ async def subscribe(ctx: discord.Interaction):
         if resp.status_code == 200:
             await ctx.response.send_message("You have successfully subscribed to originPlus.")
         else:
-            await ctx.response.send_message(f"Failed to subscribe. Server responded with status {resp.status_code}.")
+            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}")
     except Exception as e:
         await ctx.response.send_message(f"Error subscribing to originPlus: {str(e)}", ephemeral=True)
 
@@ -634,7 +634,7 @@ async def unsubscribe(ctx: discord.Interaction):
         if resp.status_code == 200:
             await ctx.response.send_message("You have successfully unsubscribed from originPlus.")
         else:
-            await ctx.response.send_message(f"Failed to unsubscribe. Server responded with status {resp.status_code}.")
+            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}")
     except Exception as e:
         await ctx.response.send_message(f"Error unsubscribing from originPlus: {str(e)}", ephemeral=True)
 
