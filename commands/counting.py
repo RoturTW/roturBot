@@ -195,7 +195,7 @@ async def handle_counting_message(message, channel):
             state["current_count"] = int(number)
             state["last_user"] = None
             save_state()
-            await channel.send(f"Count set to {number}, next number is {number + 1}!")
+            await channel.send(f"Count set to {number}, next number is {int(number) + 1}!")
         except Exception as e:
             await channel.send(f"Error setting count: {e}")
         return True
