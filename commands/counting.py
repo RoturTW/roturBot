@@ -189,6 +189,21 @@ async def handle_counting_message(message, channel):
     
     state = get_channel_state(str(channel.id))
 
+    if content.startswith("!set_count"):
+        number = content.split(" ")[1]
+        try:
+            state["current_count"] = int(number)
+            state["last_user"] = None
+            save_state()
+            await channel.send(f"Count set to {number}, next number is {number + 1}!")
+        except Exception as e:
+            await channel.send(f"Error setting count: {e}")
+        return True
+    
+    number = extract_number_from_message(content)
+    if number is None:
+        return True
+    
     if not is_rotur_user(user_id):
         try:
             await channel.send(
@@ -197,11 +212,7 @@ async def handle_counting_message(message, channel):
         except:
             pass  # Can't send DM
         return True
-    
-    number = extract_number_from_message(content)
-    if number is None:
-        return True
-    
+
     expected_count = state["current_count"] + 1
     user_stats = _get_or_create_user(state, user_id)
     if str(number) == "True" or str(number) == "False":
