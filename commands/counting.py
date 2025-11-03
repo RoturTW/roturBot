@@ -190,14 +190,23 @@ async def handle_counting_message(message, channel):
     state = get_channel_state(str(channel.id))
 
     if content.startswith("!set_count") and user_id == "603952506330021898":
-        number = content.split(" ")[1]
+        parts = content.split()
+        if len(parts) < 2:
+            await channel.send("❌ Usage: `!set_count <number>`")
+            return True
+        
         try:
-            state["current_count"] = int(number)
+            number = int(parts[1])
+            state["current_count"] = number
             state["last_user"] = None
+            state['last_count_message_id'] = None
+            state['last_count_value'] = None
             save_state()
-            await channel.send(f"Count set to {number}, next number is {int(number) + 1}!")
+            await channel.send(f"✅ Count set to **{number}**. Next number is **{number + 1}**!")
+        except ValueError:
+            await channel.send(f"❌ Invalid number: `{parts[1]}`. Please provide a valid integer.")
         except Exception as e:
-            await channel.send(f"Error setting count: {e}")
+            await channel.send(f"❌ Error setting count: {e}")
         return True
     
     number = extract_number_from_message(content)
@@ -210,13 +219,15 @@ async def handle_counting_message(message, channel):
                 f"❌ {message.author.mention} you need a rotur account to participate in counting! Link your account with /link"
             )
         except:
-            pass  # Can't send DM
+            pass
         return True
 
     expected_count = state["current_count"] + 1
     user_stats = _get_or_create_user(state, user_id)
+    
     if str(number) == "True" or str(number) == "False":
         return True
+    
     if number == expected_count:
         if state["last_user"] == user_id:
             try:
@@ -259,6 +270,8 @@ async def handle_counting_message(message, channel):
             old_count = state["current_count"]
             state["current_count"] = 0
             state["last_user"] = None
+            state['last_count_message_id'] = None
+            state['last_count_value'] = None
             state['resets'] = state.get('resets', 0) + 1
             user_stats['fails'] += 1
             save_state()
