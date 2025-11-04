@@ -593,7 +593,7 @@ async def following_list(ctx: discord.Interaction):
         await ctx.response.send_message(f"Error retrieving following list: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
-@tree.command(name='subscribe', description='Subscribe to originPlus (15 credits per month)')
+@tree.command(name='subscribe', description='Subscribe to Lite (15 credits per month)')
 async def subscribe(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
@@ -609,14 +609,14 @@ async def subscribe(ctx: discord.Interaction):
     try:
         resp = requests.get("https://social.rotur.dev/keys/buy/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
         if resp.status_code == 200:
-            await ctx.response.send_message("You have successfully subscribed to originPlus.")
+            await ctx.response.send_message("You have successfully subscribed to Lite.")
         else:
             await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}")
     except Exception as e:
-        await ctx.response.send_message(f"Error subscribing to originPlus: {str(e)}", ephemeral=True)
+        await ctx.response.send_message(f"Error subscribing to Lite: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
-@tree.command(name='unsubscribe', description='Unsubscribe from originPlus')
+@tree.command(name='unsubscribe', description='Unsubscribe from Lite')
 async def unsubscribe(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
@@ -626,17 +626,17 @@ async def unsubscribe(ctx: discord.Interaction):
     if not token:
         await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
         return
-    if user.get("sys.subscription", {}).get("tier", "Free") != "originPlus":
-        await ctx.response.send_message("You are not subscribed to originPlus.", ephemeral=True)
+    if user.get("sys.subscription", {}).get("tier", "Free") != "Lite":
+        await ctx.response.send_message("You are not subscribed to Lite.", ephemeral=True)
         return
     try:
         resp = requests.delete("https://social.rotur.dev/keys/cancel/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
         if resp.status_code == 200:
-            await ctx.response.send_message("You have successfully unsubscribed from originPlus.")
+            await ctx.response.send_message("You have successfully unsubscribed from Lite.")
         else:
             await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}")
     except Exception as e:
-        await ctx.response.send_message(f"Error unsubscribing from originPlus: {str(e)}", ephemeral=True)
+        await ctx.response.send_message(f"Error unsubscribing from Lite: {str(e)}", ephemeral=True)
 
 # Marriage Commands Group
 marriage = app_commands.Group(name='marriage', description='Commands related to rotur marriage system')
