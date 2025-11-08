@@ -355,9 +355,9 @@ def create_embed_from_user(user):
     username = user.get('username')
     if username and isinstance(username, str) and username.strip():
         if user.get('pfp'):
-            embed.set_thumbnail(url=f"https://avatars.rotur.dev/{username}?nocache={randomString(5)}")
+            embed.set_thumbnail(url=f"https://avatars.rotur.dev/{username}.gif?nocache={randomString(5)}")
         if user.get('banner'):
-            embed.set_image(url=f"https://avatars.rotur.dev/.banners/{username}?nocache={randomString(5)}")
+            embed.set_image(url=f"https://avatars.rotur.dev/.banners/{username}.gif?nocache={randomString(5)}")
     
     return embed
 
@@ -2269,18 +2269,31 @@ async def call_tool(name: str, arguments: dict) -> str:
                 ts = arguments.get("timestamp")
                 if ts is None:
                     return json.dumps({"error": "timestamp argument missing"})
+
                 try:
-                    ts_int = int(ts)
+                    ts_float = float(ts)
                 except Exception:
-                    try:
-                        ts_int = int(float(ts))
-                    except Exception:
-                        return json.dumps({"error": "invalid timestamp"})
-                dt = datetime.fromtimestamp(ts_int / 1000, tz=timezone.utc)
+                    return json.dumps({"error": "invalid timestamp"})
+
+                # Detect likely unit
+                if ts_float > 1e18:      # nanoseconds
+                    ts_float /= 1e9
+                elif ts_float > 1e15:    # microseconds
+                    ts_float /= 1e6
+                elif ts_float > 1e12:    # milliseconds
+                    ts_float /= 1e3
+                # else: already seconds
+
+                try:
+                    dt = datetime.fromtimestamp(ts_float, tz=timezone.utc)
+                except Exception as e:
+                    return json.dumps({"error": f"invalid timestamp: {e}"})
+
                 iso = dt.isoformat()
                 human = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-                unix_sec = int(ts_int / 1000)
+                unix_sec = int(ts_float)
                 discord_ts = f"<t:{unix_sec}:f>"
+
                 return json.dumps({
                     "iso": iso,
                     "human": human,
@@ -2408,7 +2421,7 @@ async def query_cerebras(messages: list, my_msg: discord.Message) -> dict:
 
         if status != 200 or "error" in response_data:
             print(f"[cerebras] API error status={status}: {response_data}")
-            return {"choices": [{"message": {"content": ""}}]}
+            return {"choices": [{"message": {"content": "API Error: " + str(response_data.get("message", ""))}}]}
 
         choice = response_data.get("choices", [{}])[0]
 
