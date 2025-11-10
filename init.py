@@ -1813,6 +1813,9 @@ async def on_message(message):
     except Exception as e:
         print(f"[ForwardError] Failed to forward message {message.id}: {e}")
 
+    if "thanks rotur" in message.content:
+        await message.reply("you're welcome")
+
     if (message.guild is not None and 
         not message.author.bot and
         str(message.guild.id) == originOS):
