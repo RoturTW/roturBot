@@ -38,10 +38,18 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] delete",
                 "!roturacc [name] token",
                 "!roturacc [name] refresh_token",
-                "!roturacc [name] sub <tier> - only mistium can add subscriptions"
+                "!roturacc [name] sub <tier> - only mistium can add subscriptions",
+                "!roturacc [name] banned_words",
+                "!roturacc <word> ban_word",
+                "!roturacc <word> unban_word"
             ]
             await channel.send("\n".join(lines))
             return
+        case "banned_words":
+            with open(os.path.join('./banned_words.json'), 'r') as f:
+                words = json.load(f)
+            await channel.send(f"Banned words: {', '.join(words)}")
+    
     
     if len(spl) < 3:
         await channel.send("Usage: !roturacc <username> <command>")
@@ -158,3 +166,37 @@ async def query(spl, channel, user, dir):
                 await channel.send(resp.get("error"))
             else:
                 await channel.send(f"Added subscription {sub} to {username} for 30 days")
+        case "ban_word":
+            if not isMistium:
+                await channel.send("Only mistium can ban words")
+                return
+            word = spl[1]
+            if word == "":
+                await channel.send("Usage: !roturacc <word> ban_word")
+                return
+            with open(os.path.join('./banned_words.json'), 'r') as f:
+                words = json.load(f)
+            if word in words:
+                await channel.send(f"Word {word} is already banned.")
+                return
+            words.append(word)
+            with open(os.path.join('./banned_words.json'), 'w') as f:
+                json.dump(words, f)
+            await channel.send(f"Banned word {word}.")
+        case "unban_word":
+            if not isMistium:
+                await channel.send("Only mistium can unban words")
+                return
+            word = spl[1]
+            if word == "":
+                await channel.send("Usage: !roturacc <word> unban_word")
+                return
+            with open(os.path.join('./banned_words.json'), 'r') as f:
+                words = json.load(f)
+            if word not in words:
+                await channel.send(f"Word {word} is not banned.")
+                return
+            words.remove(word)
+            with open(os.path.join('./banned_words.json'), 'w') as f:
+                json.dump(words, f)
+            await channel.send(f"Unbanned word {word}.")
