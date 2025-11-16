@@ -28,6 +28,8 @@ async def query(spl, channel, user, dir):
         await channel.send("You do not own any systems.")
         return
     
+    isMistium = str(user.id) == MISTIUM_ID
+    
     match spl[1]:
         case 'help':
             lines = [
@@ -38,7 +40,8 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] delete",
                 "!roturacc [name] token",
                 "!roturacc [name] refresh_token",
-                "!roturacc [name] sub <tier> - only mistium can add subscriptions",
+                "Mistium only:",
+                "!roturacc [name] sub <tier>",
                 "!roturacc banned_words",
                 "!roturacc <word> ban_word",
                 "!roturacc <word> unban_word"
@@ -46,6 +49,9 @@ async def query(spl, channel, user, dir):
             await channel.send("\n".join(lines))
             return
         case "banned_words":
+            if not isMistium:
+                await channel.send("Only mistium can view banned words.")
+                return
             with open(os.path.join('./banned_words.json'), 'r') as f:
                 words = json.load(f)
             await channel.send(f"Banned words: {', '.join(words)}")
@@ -56,8 +62,6 @@ async def query(spl, channel, user, dir):
         return
     
     username = spl[1].lower()
-
-    isMistium = str(user.id) == MISTIUM_ID
     
     match spl[2]:
         case 'size':
