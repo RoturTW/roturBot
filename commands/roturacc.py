@@ -39,7 +39,7 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] token",
                 "!roturacc [name] refresh_token",
                 "!roturacc [name] sub <tier> - only mistium can add subscriptions",
-                "!roturacc [name] banned_words",
+                "!roturacc banned_words",
                 "!roturacc <word> ban_word",
                 "!roturacc <word> unban_word"
             ]
