@@ -26,6 +26,8 @@ from datetime import datetime, timezone, timedelta
 status_sync_cache = {}  # {user_id: {'last_status': str, 'last_sync': timestamp}}
 STATUS_SYNC_COOLDOWN = 5  # seconds between syncs for the same user
 
+server = os.getenv("CENTRAL_SERVER", "https://api.rotur.dev")
+
 def randomString(length):
     """Generate a random string of specified length"""
     letters = string.ascii_lowercase + string.digits
@@ -364,7 +366,7 @@ def create_embed_from_user(user):
 @allowed_everywhere
 @tree.command(name='me', description='View your rotur profile')
 async def me(ctx: discord.Interaction):
-    user = requests.get(f"https://social.rotur.dev/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    user = requests.get(f"{server}/profile?include_posts=0&discord_id={ctx.user.id}").json()
     if user is None or user.get('error') == "User not found":
         await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.')
         return
@@ -376,7 +378,7 @@ async def me(ctx: discord.Interaction):
 @tree.command(name='user', description='View a user\'s rotur profile')
 @app_commands.describe(username='The username of the user to view')
 async def user(ctx: discord.Interaction, username: str):
-    user = requests.get(f"https://social.rotur.dev/profile?include_posts=0&name={username}").json()
+    user = requests.get(f"{server}/profile?include_posts=0&name={username}").json()
     if user is None:
         await ctx.response.send_message('User not found.')
         return
@@ -428,7 +430,7 @@ async def online(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='totalusers', description='Display the total number of rotur users')
 async def totalusers(ctx: discord.Interaction):
-    users = requests.get("https://social.rotur.dev/stats/users").json()
+    users = requests.get(f"{server}/stats/users").json()
     if not isinstance(users, dict) or 'total_users' not in users:
         await ctx.response.send_message("Error fetching user statistics.")
         return
@@ -471,7 +473,7 @@ async def changepass(ctx: discord.Interaction, new_password: str):
 
     try:
         resp = requests.patch(
-            "https://social.rotur.dev/users",
+            f"{server}/users",
             headers={"Content-Type": "application/json"},
             data=json.dumps({"key": "password", "value": hashed, "auth": token})
         )
@@ -492,7 +494,7 @@ async def changepass(ctx: discord.Interaction, new_password: str):
 async def rich(ctx: discord.Interaction, limit: int = 10):
     max_fields = 25
     limit = min(limit, max_fields)
-    users = requests.get(f"https://social.rotur.dev/stats/rich?max={limit}").json()
+    users = requests.get(f"{server}/stats/rich?max={limit}").json()
     if users is None:
         await ctx.response.send_message("Error: Unable to retrieve user data.")
         return
@@ -506,7 +508,7 @@ async def rich(ctx: discord.Interaction, limit: int = 10):
 @allowed_everywhere
 @tree.command(name='most_followed', description='See the leaderboard of the most followed users')
 async def most_followed(ctx: discord.Interaction):
-    users = requests.get(f"https://social.rotur.dev/stats/followers").json()
+    users = requests.get(f"{server}/stats/followers").json()
     if users is None:
         await ctx.response.send_message("Error: Unable to retrieve user data.")
         return
@@ -532,7 +534,7 @@ async def follow(ctx: discord.Interaction, username: str):
         return
 
     try:
-        resp = requests.get(f"https://social.rotur.dev/follow?auth={token}&name={username}")
+        resp = requests.get(f"{server}/follow?auth={token}&name={username}")
         if resp.status_code == 200:
             await ctx.response.send_message(f"You are now following {username}.")
         else:
@@ -557,7 +559,7 @@ async def unfollow(ctx: discord.Interaction, username: str):
         return
 
     try:
-        resp = requests.get(f"https://social.rotur.dev/unfollow?auth={token}&name={username}")
+        resp = requests.get(f"{server}/unfollow?auth={token}&name={username}")
         if resp.status_code == 200:
             await ctx.response.send_message(f"You are no longer following {username}.")
         else:
@@ -576,7 +578,7 @@ async def following_list(ctx: discord.Interaction):
         return
 
     try:
-        resp = requests.get(f"https://social.rotur.dev/following?name={user['username']}")
+        resp = requests.get(f"{server}/following?name={user['username']}")
         if resp.status_code == 200:
             user_data = resp.json()
             following_list = user_data.get('following', [])
@@ -607,7 +609,7 @@ async def subscribe(ctx: discord.Interaction):
         await ctx.response.send_message("You already have an active subscription.", ephemeral=True)
         return
     try:
-        resp = requests.get("https://social.rotur.dev/keys/buy/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
+        resp = requests.get(f"{server}/keys/buy/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
         if resp.status_code == 200:
             await ctx.response.send_message("You have successfully subscribed to Lite.")
         else:
@@ -630,7 +632,7 @@ async def unsubscribe(ctx: discord.Interaction):
         await ctx.response.send_message("You are not subscribed to Lite.", ephemeral=True)
         return
     try:
-        resp = requests.delete("https://social.rotur.dev/keys/cancel/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
+        resp = requests.delete(f"{server}/keys/cancel/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
         if resp.status_code == 200:
             await ctx.response.send_message("You have successfully unsubscribed from Lite.")
         else:
@@ -670,11 +672,7 @@ async def block(ctx: discord.Interaction, username: str):
         await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
         return
     try:
-        resp = requests.post(f"https://api.rotur.dev/me/block/{username}?auth={token}")
-        if resp.status_code == 200:
-            await ctx.response.send_message(f"You are now blocking {username}.")
-        else:
-            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+        await ctx.response.send_message(rotur.block_user(token, username))
     except Exception as e:
         await ctx.response.send_message(f"Error blocking user: {str(e)}", ephemeral=True)
 
@@ -691,11 +689,7 @@ async def unblock(ctx: discord.Interaction, username: str):
         await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
         return
     try:
-        resp = requests.post(f"https://api.rotur.dev/me/unblock/{username}?auth={token}")
-        if resp.status_code == 200:
-            await ctx.response.send_message(f"You are no longer blocking {username}.")
-        else:
-            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+        await ctx.response.send_message(rotur.unblock_user(token, username))
     except Exception as e:
         await ctx.response.send_message(f"Error unblocking user: {str(e)}", ephemeral=True)
 
@@ -727,7 +721,7 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
     
     try:
         # Send proposal request
-        response = requests.post(f"https://social.rotur.dev/marriage/propose/{username}?auth={auth_key}", timeout=10)
+        response = requests.post(f"{server}/marriage/propose/{username}?auth={auth_key}", timeout=10)
         result = response.json()
         
         if response.status_code == 200:
@@ -780,7 +774,7 @@ class ProposalView(discord.ui.View):
             return
         
         try:
-            response = requests.post(f"https://social.rotur.dev/marriage/accept?auth={auth_key}", timeout=10)
+            response = requests.post(f"{server}/marriage/accept?auth={auth_key}", timeout=10)
             result = response.json()
             
             if response.status_code == 200:
@@ -824,7 +818,7 @@ class ProposalView(discord.ui.View):
             return
         
         try:
-            response = requests.post(f"https://social.rotur.dev/marriage/reject?auth={auth_key}", timeout=10)
+            response = requests.post(f"{server}/marriage/reject?auth={auth_key}", timeout=10)
             result = response.json()
             
             if response.status_code == 200:
@@ -879,7 +873,7 @@ async def marriage_cancel(ctx: discord.Interaction):
     
     try:
         # Cancel proposal
-        response = requests.post(f"https://social.rotur.dev/marriage/cancel?auth={auth_key}", timeout=10)
+        response = requests.post(f"{server}/marriage/cancel?auth={auth_key}", timeout=10)
         result = response.json()
         
         if response.status_code == 200:
@@ -910,7 +904,7 @@ async def marriage_divorce(ctx: discord.Interaction):
     
     try:
         # Divorce request
-        response = requests.post(f"https://social.rotur.dev/marriage/divorce?auth={auth_key}", timeout=10)
+        response = requests.post(f"{server}/marriage/divorce?auth={auth_key}", timeout=10)
         result = response.json()
         
         if response.status_code == 200:
@@ -941,7 +935,7 @@ async def marriage_status(ctx: discord.Interaction):
     
     try:
         # Get marriage status
-        response = requests.get(f"https://social.rotur.dev/marriage/status?auth={auth_key}", timeout=10)
+        response = requests.get(f"{server}/marriage/status?auth={auth_key}", timeout=10)
         result = response.json()
         
         if response.status_code == 200:
@@ -1012,14 +1006,14 @@ async def link(ctx: discord.Interaction, username: str, password: str):
         await ctx.response.send_message("You are already linked to a rotur account.", ephemeral=True)
         return
     hashed_password = hashlib.md5(password.encode()).hexdigest()
-    user = requests.get(f"https://social.rotur.dev/get_user?username={username}&password={hashed_password}").json()
+    user = requests.get(f"{server}/get_user?username={username}&password={hashed_password}").json()
     token = user.get("key")
     if not token:
         await ctx.response.send_message(user.get('error', 'Unknown error occurred.'), ephemeral=True)
         return
     try:
         resp = requests.patch(
-            "https://social.rotur.dev/users",
+            f"{server}/users",
             headers={"Content-Type": "application/json"},
             data=json.dumps({"key": "discord_id", "value": str(ctx.user.id), "auth": token})
         )
@@ -1049,7 +1043,7 @@ async def unlink(ctx: discord.Interaction):
         return
     try:
         resp = requests.patch(
-            "https://social.rotur.dev/users",
+            f"{server}/users",
             headers={"Content-Type": "application/json"},
             data=json.dumps({"key": "discord_id", "value": "", "auth": token})
         )
@@ -1080,7 +1074,7 @@ async def refresh_token_cmd(ctx: discord.Interaction):
         return
 
     try:
-        resp = requests.post(f"https://social.rotur.dev/me/refresh_token?auth={old_token}")
+        resp = requests.post(f"{server}/me/refresh_token?auth={old_token}")
     except Exception as e:
         await ctx.response.send_message(f"Error contacting server: {str(e)}", ephemeral=True)
         return
@@ -1209,7 +1203,7 @@ async def gamble(ctx: discord.Interaction, amount: float):
 
     try:
         resp = requests.post(
-            "https://social.rotur.dev/me/gamble?auth=" + token,
+            f"{server}/me/gamble?auth={token}",
             headers={"Content-Type": "application/json"},
             data=json.dumps({"amount": amount})
         )
@@ -1302,7 +1296,7 @@ async def transfer_credits(ctx: discord.Interaction, username: str, amount: floa
 
     try:
         resp = requests.post(
-            "https://social.rotur.dev/me/transfer?auth=" + token,
+            f"{server}/me/transfer?auth=" + token,
             headers={"Content-Type": "application/json"},
             data=json.dumps({"to": username, "amount": amount, "note": note})
         )
@@ -1332,7 +1326,7 @@ async def transfer_discord(ctx: discord.Interaction, discord_user: discord.User,
 
     try:
         resp = requests.post(
-            "https://social.rotur.dev/me/transfer?auth=" + token,
+            f"{server}/me/transfer?auth=" + token,
             headers={"Content-Type": "application/json"},
             data=json.dumps({"to": to_user["username"], "amount": amount, "note": note})
         )
@@ -1359,7 +1353,7 @@ async def set_key(ctx: discord.Interaction, key: str, value: str):
 
     try:
         resp = requests.patch(
-            "https://social.rotur.dev/users",
+            f"{server}/users",
             headers={"Content-Type": "application/json"},
             data=json.dumps({"key": key, "value": value, "auth": token})
         )
@@ -1386,7 +1380,7 @@ async def del_key(ctx: discord.Interaction, key: str):
 
     try:
         resp = requests.delete(
-            f"https://social.rotur.dev/users",
+            f"{server}/users",
             headers={"Content-Type": "application/json"},
             data=json.dumps({"key": key, "auth": token})
         )
@@ -1507,7 +1501,7 @@ async def quote_command(ctx: discord.Interaction, message_id: str):
 @allowed_everywhere
 @tree.command(name='accorigins', description='Get stats on how many accounts are linked to each rotur OS')
 async def accorigins(ctx: discord.Interaction):
-    system_stats = requests.get("https://social.rotur.dev/stats/systems").json()
+    system_stats = requests.get(f"{server}/stats/systems").json()
     embed = discord.Embed(title="Account Origins", color=discord.Color.blue())
     
     if not system_stats or not isinstance(system_stats, dict):
@@ -2260,13 +2254,13 @@ async def call_tool(name: str, arguments: dict) -> str:
                     })
                 return parseMessages(msgs[::-1])
             case "search_posts":
-                async with session.get(f"https://social.rotur.dev/search_posts?limit=20&q={arguments.get('query')}") as resp:
+                async with session.get(f"{server}/search_posts?limit=20&q={arguments.get('query')}") as resp:
                     return json.dumps(await resp.json())
             case "get_user":
-                async with session.get(f"https://social.rotur.dev/profile?include_posts=0&username={arguments.get('username')}") as resp:
+                async with session.get(f"{server}/profile?include_posts=0&username={arguments.get('username')}") as resp:
                     return json.dumps(await resp.json())
             case "get_posts":
-                async with session.get(f"https://social.rotur.dev/profile?include_posts=1&username={arguments.get('username')}") as resp:
+                async with session.get(f"{server}/profile?include_posts=1&username={arguments.get('username')}") as resp:
                     return json.dumps(await resp.json())
             case "convert_timestamp":
                 ts = arguments.get("timestamp")
