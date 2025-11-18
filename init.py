@@ -1202,27 +1202,28 @@ async def syncpfp(ctx: discord.Interaction):
         return
     try:
         # Fetch user's Discord avatar bytes
-        asset = ctx.user.display_avatar
-        try:
-            avatar_bytes = await asset.read()
-        except Exception:
-            # Fallback to URL fetch if direct read fails
-            async with aiohttp.ClientSession() as session:
-                async with session.get(str(asset.url), timeout=aiohttp.ClientTimeout(total=15)) as r:
-                    r.raise_for_status()
-                    avatar_bytes = await r.read()
+        asset = str(ctx.user.display_avatar)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(asset, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                r.raise_for_status()
+                avatar_bytes = await r.read()
 
-        # Convert to JPEG to match server-side decoder expectations
+        is_animated = asset.endswith(".gif")
         img = Image.open(BytesIO(avatar_bytes))
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
         # Resize client-side to 256x256 to save bandwidth (server will also resize)
         img = img.resize((256, 256))
         buf = BytesIO()
-        img.save(buf, format="JPEG", quality=85)
-        jpeg_bytes = buf.getvalue()
-
-        data_url = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
+        if is_animated:
+            # Convert to GIF to match server-side decoder expectations
+            img.save(buf, format="GIF", quality=85)
+            gif_bytes = buf.getvalue()
+            data_url = "data:image/gif;base64," + base64.b64encode(gif_bytes).decode("ascii")
+        else:
+            img.save(buf, format="JPEG", quality=85)
+            jpeg_bytes = buf.getvalue()
+            data_url = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
         payload = {"token": token, "image": data_url}
 
         async with aiohttp.ClientSession() as session:
