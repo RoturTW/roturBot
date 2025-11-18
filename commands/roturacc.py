@@ -5,7 +5,7 @@ from ..helpers import rotur
 MISTIUM_ID = "603952506330021898"
 
 async def query(spl, channel, user, dir):
-    restrictedKeys = ["username", "max_size", "created", "id", "discord_id", "sys.currency", "sys.subscription"]
+    restrictedKeys = ["username", "max_size", "created", "id", "discord_id", "sys.currency", "sys.subscription", "key"]
 
     with open(os.path.join(dir, '..', 'systems.json'), 'r') as f:
         systems = json.load(f)
@@ -40,6 +40,7 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] delete",
                 "!roturacc [name] refresh_token",
                 "Mistium only:",
+                "!roturacc [system] get_users",
                 "!roturacc [name] token",
                 "!roturacc [name] sub <tier>",
                 "!roturacc banned_words",
@@ -146,6 +147,20 @@ async def query(spl, channel, user, dir):
                 await channel.send(resp.get("error"))
             else:
                 await channel.send(f"Deleted user {username} from your system.")
+        case 'get_users':
+            if not isMistium:
+                await channel.send("Only mistium can view users")
+                return
+            user_data = rotur.get_user_by("username", "mist")
+            users = rotur.get_users(spl[1], user_data.get("key"))
+            if not users:
+                await channel.send("No users found.")
+                return
+            path = os.path.join(dir, "users_temp.json")
+            with open(path, "w") as f:
+                json.dump(users, f)
+            await channel.send(file=discord.File(path))
+            os.remove(path)
         case 'token':
             if not isMistium:
                 await channel.send("Only mistium can view tokens")

@@ -51,3 +51,7 @@ def unblock_user(token, username):
         return "You are no longer blocking " + username + "."
     else:
         return response.json().get('error', 'Unknown error occurred.')
+    
+def get_users(system, token):
+    response = requests.get(f'{server}/system/users?auth={token}&system={system}')
+    return response.json()
