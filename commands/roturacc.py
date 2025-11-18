@@ -79,6 +79,7 @@ async def query(spl, channel, user, dir):
                 return
             temp_path = os.path.join(dir, "user_data.json")
             with open(temp_path, "w") as temp_file:
+                del user_data["key"]
                 temp_file.write(json.dumps(user_data, indent=4))
             await channel.send(file=discord.File(temp_path))
             os.remove(temp_path)
