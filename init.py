@@ -858,6 +858,68 @@ class ProposalView(discord.ui.View):
                 continue
 
 @allowed_everywhere
+@marriage.command(name='accept', description='Accept your pending marriage proposal')
+async def marriage_accept(ctx: discord.Interaction):
+    # Get user's rotur account
+    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
+    if user_data is None or user_data.get('error') == "User not found":
+        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        return
+    
+    auth_key = user_data.get('key')
+    if not auth_key:
+        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        return
+    
+    try:
+        # Accept proposal
+        response = requests.post(f"{server}/marriage/accept?auth={auth_key}", timeout=10)
+        result = response.json()
+        
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="💕 Marriage Accepted!",
+                description=f"Congratulations! You and **{result.get('partner')}** are now married!",
+                color=discord.Color.green()
+            )
+            await ctx.response.edit_message(embed=embed, view=None)
+        else:
+            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error accepting proposal: {str(e)}", ephemeral=True)
+
+@allowed_everywhere
+@marriage.command(name='reject', description='Reject your pending marriage proposal')
+async def marriage_reject(ctx: discord.Interaction):
+    # Get user's rotur account
+    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
+    if user_data is None or user_data.get('error') == "User not found":
+        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        return
+    
+    auth_key = user_data.get('key')
+    if not auth_key:
+        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        return
+    
+    try:
+        # Reject proposal
+        response = requests.post(f"{server}/marriage/reject?auth={auth_key}", timeout=10)
+        result = response.json()
+        
+        if response.status_code == 200:
+            embed = discord.Embed(
+                title="💔 Marriage Proposal Rejected",
+                description=f"You have rejected **{result.get('proposer')}**'s marriage proposal.",
+                color=discord.Color.red()
+            )
+            await ctx.response.edit_message(embed=embed, view=None)
+        else:
+            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+    except Exception as e:
+        await ctx.response.send_message(f"Error rejecting proposal: {str(e)}", ephemeral=True)
+
+@allowed_everywhere
 @marriage.command(name='cancel', description='Cancel your pending marriage proposal')
 async def marriage_cancel(ctx: discord.Interaction):
     # Get user's rotur account
