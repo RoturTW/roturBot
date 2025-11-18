@@ -38,9 +38,9 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] get",
                 "!roturacc [name] size",
                 "!roturacc [name] delete",
-                "!roturacc [name] token",
                 "!roturacc [name] refresh_token",
                 "Mistium only:",
+                "!roturacc [name] token",
                 "!roturacc [name] sub <tier>",
                 "!roturacc banned_words",
                 "!roturacc <word> ban_word",
@@ -70,13 +70,6 @@ async def query(spl, channel, user, dir):
                 await channel.send(f"No file system found for user {username}.")
                 return
             await channel.send(f"File system size for {username}: {usage_data}")
-        case 'token':
-            user_data = rotur.get_user_by("username", username)
-            if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
-                await channel.send(f"User {username} not found.")
-                return
-            token = user_data.get("key", "No token found.")
-            await channel.send(f"Token for {username}: {token}")
         case 'get':
             username = spl[1]
             user_data = rotur.get_user_by("username", username)
@@ -152,6 +145,16 @@ async def query(spl, channel, user, dir):
                 await channel.send(resp.get("error"))
             else:
                 await channel.send(f"Deleted user {username} from your system.")
+        case 'token':
+            if not isMistium:
+                await channel.send("Only mistium can view tokens")
+                return
+            user_data = rotur.get_user_by("username", username)
+            if not user_data:
+                await channel.send(f"User {username} not found.")
+                return
+            token = user_data.get("key", "No token found.")
+            await channel.send(f"Token for {username}: {token}")
         case 'sub':
             if not isMistium:
                 await channel.send("Only mistium can add subscriptions")
