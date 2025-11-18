@@ -1165,7 +1165,7 @@ async def syncpfp(ctx: discord.Interaction):
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{avatars_api_base}/rotur-upload-pfp",
+                f"{avatars_api_base}/rotur-upload-pfp?ADMIN_TOKEN={os.getenv('ADMIN_TOKEN')}",
                 json=payload,
                 timeout=aiohttp.ClientTimeout(total=20)
             ) as resp:
