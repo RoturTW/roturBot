@@ -23,19 +23,19 @@ def get_user_by(key, value):
 
 def update_user(type, username, key=None, value=None):
     user_data = {"type": type, "username": username, "key": key, "value": value}
-    response = requests.post('{server}/admin/update_user', json=user_data, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
+    response = requests.post(f'{server}/admin/update_user', json=user_data, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
     return response.json()
 
 def add_subscription(username, tier):
-    response = requests.post('{server}/admin/set_sub', json={"username": username, "tier": tier}, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
+    response = requests.post(f'{server}/admin/set_sub', json={"username": username, "tier": tier}, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
     return response.json()
 
 def delete_user(username):
-    response = requests.post('{server}/admin/delete_user', json={"username": username}, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
+    response = requests.post(f'{server}/admin/delete_user', json={"username": username}, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
     return response.json()
 
 def transfer_credits(from_username, to_username, amount):
-     resp = requests.post("{server}/admin/transfer_credits?to=" + to_username + "&amount=" + str(amount) + "&from=" + from_username, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
+     resp = requests.post(f"{server}/admin/transfer_credits?to=" + to_username + "&amount=" + str(amount) + "&from=" + from_username, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
      return resp.json()
 
 def block_user(token, username):
