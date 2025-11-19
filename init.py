@@ -1208,22 +1208,9 @@ async def syncpfp(ctx: discord.Interaction):
                 r.raise_for_status()
                 avatar_bytes = await r.read()
 
-        is_animated = asset.endswith(".gif")
-        img = Image.open(BytesIO(avatar_bytes))
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-        # Resize client-side to 256x256 to save bandwidth (server will also resize)
-        img = img.resize((256, 256))
-        buf = BytesIO()
-        if is_animated:
-            # Convert to GIF to match server-side decoder expectations
-            img.save(buf, format="GIF", quality=85)
-            gif_bytes = buf.getvalue()
-            data_url = "data:image/gif;base64," + base64.b64encode(gif_bytes).decode("ascii")
-        else:
-            img.save(buf, format="JPEG", quality=85)
-            jpeg_bytes = buf.getvalue()
-            data_url = "data:image/jpeg;base64," + base64.b64encode(jpeg_bytes).decode("ascii")
+        b64_avatar = base64.b64encode(avatar_bytes).decode("utf-8")
+        data_url = f"data:{r.content_type};base64,{b64_avatar}"
+
         payload = {"token": token, "image": data_url}
 
         async with aiohttp.ClientSession() as session:
