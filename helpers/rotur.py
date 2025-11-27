@@ -26,6 +26,12 @@ def update_user(type, username, key=None, value=None):
     response = requests.post(f'{server}/admin/update_user', json=user_data, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
     return response.json()
 
+def delete_user_key(username, key):
+    return update_user("remove", username, key)
+
+def set_user_key(username, key, value):
+    return update_user("update", username, key, value)
+
 def add_subscription(username, tier):
     response = requests.post(f'{server}/admin/set_sub', json={"username": username, "tier": tier}, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
     return response.json()
@@ -54,4 +60,8 @@ def unblock_user(token, username):
     
 def get_users(system, token):
     response = requests.get(f'{server}/system/users?auth={token}&system={system}')
+    return response.json()
+
+def get_user(token):
+    response = requests.get(f'{server}/me?auth={token}')
     return response.json()
