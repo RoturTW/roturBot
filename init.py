@@ -1235,6 +1235,8 @@ async def syncpfp(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='gamble', description='Gamble your credits for a chance to win more')
 async def gamble(ctx: discord.Interaction, amount: float):
+    await ctx.response.send_message("This command is currently disabled. If you want more credits: https://ko-fi.com/s/eebeb7269f")
+    return
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
