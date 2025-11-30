@@ -5,10 +5,8 @@ from .commands import stats, roturacc, counting
 from .helpers import rotur
 from .helpers.quote_generator import quote_generator
 import requests, json, os, random, string, re
-import aiohttp, time, logging
-import urllib.parse
+import aiohttp
 from io import BytesIO
-from PIL import Image
 import asyncio, psutil
 
 from sympy import sympify
@@ -1237,44 +1235,6 @@ async def syncpfp(ctx: discord.Interaction):
 async def gamble(ctx: discord.Interaction, amount: float):
     await ctx.response.send_message("This command is currently disabled. If you want more credits: https://ko-fi.com/s/eebeb7269f")
     return
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
-    if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
-        return
-    token = user.get("key")
-    if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
-        return
-    balance = user.get('sys.currency', 0)
-    if balance < amount:
-        await ctx.response.send_message("You don't have enough credits to gamble that amount.", ephemeral=True)
-        return
-    if amount > 50 or amount < 0.01:
-        await ctx.response.send_message("You can only gamble between 0.01 and 50 credits.", ephemeral=True)
-        return
-
-    try:
-        resp = requests.post(
-            f"{server}/me/gamble?auth={token}",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"amount": amount})
-        )
-        if resp.status_code != 200:
-            await ctx.response.send_message(f"Failed to gamble. Server responded with status {resp.status_code}.")
-            return
-        data = resp.json()
-        if data.get("error"):
-            await ctx.response.send_message(f"Error from server: {data['error']}", ephemeral=True)
-            return
-        balance = data.get("balance", balance)
-    except Exception as e:
-        await ctx.response.send_message(f"Error gambling: {str(e)}", ephemeral=True)
-        return
-
-    if data.get("won", False):
-        await ctx.response.send_message(f"{user['username']} You WON {amount} Credits, you now have {balance} Credits, awesome!!")
-    else:
-        await ctx.response.send_message(f"{user['username']} You lost {amount} Credits, you now have {balance} Credits, better luck next time")
 
 @allowed_everywhere
 @tree.command(name='allkeys', description='Get a list of all the keys in your account')
