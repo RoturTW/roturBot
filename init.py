@@ -1312,7 +1312,7 @@ async def transfer_credits(ctx: discord.Interaction, username: str, amount: floa
             data=json.dumps({"to": username, "amount": amount, "note": note})
         )
         if resp.status_code == 200:
-            await ctx.response.send_message(f"Successfully transferred {amount} credits to {username}.")
+            await ctx.response.send_message(f"Successfully transferred {amount} credits to {username}." + (f"\nNote: {note}" if note else ""))
         else:
             await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
     except Exception as e:
@@ -1342,7 +1342,7 @@ async def transfer_discord(ctx: discord.Interaction, discord_user: discord.User,
             data=json.dumps({"to": to_user["username"], "amount": amount, "note": note})
         )
         if resp.status_code == 200:
-            await ctx.response.send_message(f"Successfully transferred {amount} credits to {to_user["username"]}.")
+            await ctx.response.send_message(f"Successfully transferred {amount} credits to {to_user["username"]}." + (f"\nNote: {note}" if note else ""))
         else:
             await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
     except Exception as e:
