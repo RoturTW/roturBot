@@ -1,5 +1,6 @@
 import os
 import requests
+import urllib.parse
 
 server = os.getenv("CENTRAL_SERVER", "https://api.rotur.dev")
 
@@ -40,8 +41,14 @@ def delete_user(username):
     response = requests.post(f'{server}/admin/delete_user', json={"username": username}, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
     return response.json()
 
-def transfer_credits(from_username, to_username, amount):
-     resp = requests.post(f"{server}/admin/transfer_credits?to=" + to_username + "&amount=" + str(amount) + "&from=" + from_username, headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
+def transfer_credits(from_username, to_username, amount, note=""):
+     query = {
+         "to": to_username,
+         "amount": str(amount),
+         "from": from_username,
+         "note": note
+     }
+     resp = requests.post(f"{server}/admin/transfer_credits?" + urllib.parse.urlencode(query), headers={'Authorization': os.getenv('ADMIN_TOKEN'), 'Content-Type': 'application/json'})
      return resp.json()
 
 def block_user(token, username):

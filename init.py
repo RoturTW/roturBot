@@ -160,16 +160,15 @@ async def award_daily_credit(user_id, credit_amount):
         if not username:
             return False, "No username found"
         
-        old_balance = float(user.get("sys.currency", 0))
-        new_balance = old_balance + credit_amount
-        
-        result = rotur.update_user("update", username, "sys.currency", new_balance)
+        result = rotur.transfer_credits("rotur", username, credit_amount, "daily credit")
 
         print(f"Update result for {username}: {result}")
         
         if result.get("error"):
             return False, f"API error: {result.get('error')}"
         else:
+            old_balance = float(user.get("sys.currency", 0))
+            new_balance = old_balance + credit_amount
             return True, (old_balance, new_balance)
             
     except Exception as e:
@@ -488,18 +487,18 @@ async def changepass(ctx: discord.Interaction, new_password: str):
         await ctx.response.send_message(f"Error changing password: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
-@tree.command(name='rich', description='See the leaderboard of the richest users')
+@tree.command(name='rich', description='See the leaderboard of who earned the most')
 async def rich(ctx: discord.Interaction, limit: int = 10):
     max_fields = 25
     limit = min(limit, max_fields)
-    users = requests.get(f"{server}/stats/rich?max={limit}").json()
+    users = requests.get(f"{server}/stats/most_gained?max={limit}").json()
     if users is None:
         await ctx.response.send_message("Error: Unable to retrieve user data.")
         return
 
-    embed = discord.Embed(title="Richest Users", description="Leaderboard of the richest users")
+    embed = discord.Embed(title="Richest Users", description="Leaderboard of top earners")
     for i, user in enumerate(users):
-        embed.add_field(name=f"{i + 1}. {user.get('username', 'unknown')}", value=f"Wealth: {user.get('wealth', 0)}", inline=False)
+        embed.add_field(name=f"{i + 1}. {user.get('user', 'unknown')}", value=f"Earned: {round(user.get('earned', 0))}", inline=False)
 
     await ctx.response.send_message(embed=embed)
 
