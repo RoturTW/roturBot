@@ -1290,7 +1290,7 @@ async def balance(ctx: discord.Interaction):
     embed = discord.Embed(
         title=f"You have {balance} credits",
     )
-    await ctx.response.send_message(embed=embed)
+    await ctx.response.send_message(embed=embed, ephemeral=True)
 
 @allowed_everywhere
 @transfer.command(name='rotur', description='Transfer credits to another user')

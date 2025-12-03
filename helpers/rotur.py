@@ -9,11 +9,11 @@ def bio_from_obj(obj):
 
     string = (
         f'{tier}\n'
-        f'Credits: {obj.get("currency", "0")}\n'
-        f'Account: #{obj.get("index", "unknown")}\n'
+        f'{obj.get("followers", "0")} Followers\n'
+        f'Account #{obj.get("index", "unknown")}\n'
     )
     if obj.get("married_to", {}):
-        string += f'💍 Married to {obj["married_to"]}\n'
+        string += f'Married to {obj["married_to"]}\n'
 
     string += f'\n{obj.get("bio", "")}\n'
     return string
