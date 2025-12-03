@@ -1371,7 +1371,7 @@ async def set_key(ctx: discord.Interaction, key: str, value: str):
         if resp.status_code == 200:
             await ctx.response.send_message(f"Key '{key}' set to '{value}'.")
         else:
-            await ctx.response.send_message(f"Failed to set key '{key}'. Server responded with status {resp.status_code}.", ephemeral=True)
+            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
     except Exception as e:
         await ctx.response.send_message(f"Error setting key: {str(e)}", ephemeral=True)
 
