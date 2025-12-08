@@ -48,6 +48,55 @@ tools = json.load(tools)
 with open(os.path.join(_MODULE_DIR, "static", "history.json"), "r") as history_file:
     history = json.load(history_file)
 
+import random
+import re
+
+EMOTES = ["nya~", "mew~", ":3", ">w<", "uwu", "*purrs*", "*nuzzles*"]
+INSERT_POINTS = [",", ".", "!", "?"]
+
+catmaid_mode = False
+
+def catify(text: str):
+    if not catmaid_mode:
+        return text
+
+    # Step 1 — light phonetic modifications
+    def phonetics(w: str):
+        # r/l → w
+        w = re.sub(r"[rl]", "w", w)
+        w = re.sub(r"[RL]", "W", w)
+
+        # "na" "no" "nu" "ne" → nya/nyo/nyu/nye (25% chance each)
+        if random.random() < 0.25:
+            w = re.sub(r"\b(n)([aeiou])", r"ny\2", w, flags=re.IGNORECASE)
+        return w
+
+    words = text.split()
+    words = [phonetics(w) for w in words]
+
+    new = " ".join(words)
+
+    # Step 2 — occasional stutter (10% chance)
+    if random.random() < 0.10:
+        new = re.sub(r"\b([a-zA-Z])", r"\1-\1", new, count=1)
+
+    # Step 3 — add cute suffix (30% chance)
+    if random.random() < 0.30:
+        new += " " + random.choice(EMOTES)
+
+    # Step 4 — insert meow/nya at natural pause points (20% chance)
+    for mark in INSERT_POINTS:
+        if mark in new and random.random() < 0.20:
+            new = new.replace(mark, f" {random.choice(EMOTES)}{mark}")
+
+    return new
+
+
+async def send_message(ctx, message, ephemeral=False):
+    if message:
+        message = catify(message)
+    await ctx.send_message(message, ephemeral=ephemeral)
+
 def load_activity_exclusions():
     """Load the list of users excluded from activity alerts"""
     try:
@@ -365,7 +414,7 @@ def create_embed_from_user(user):
 async def me(ctx: discord.Interaction):
     user = requests.get(f"{server}/profile?include_posts=0&discord_id={ctx.user.id}").json()
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.')
+        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.')
         return
     
     await ctx.response.send_message(embed=create_embed_from_user(user))
@@ -377,7 +426,7 @@ async def me(ctx: discord.Interaction):
 async def user(ctx: discord.Interaction, username: str):
     user = requests.get(f"{server}/profile?include_posts=0&name={username}").json()
     if user is None:
-        await ctx.response.send_message('User not found.')
+        await send_message(ctx.response, 'User not found.')
         return
 
     print(str(user.get('private', False)).lower())
@@ -400,11 +449,11 @@ async def up(ctx: discord.Interaction):
         users = await parent_ctx["get_room_users"]("roturTW")
         found = any(user.get("username") == "sys-rotur" for user in users)
         if found:
-            await ctx.response.send_message("✅ sys-rotur is connected")
+            await send_message(ctx.response, "✅ sys-rotur is connected")
         else:
-            await ctx.response.send_message("❌ sys-rotur is not connected")
+            await send_message(ctx.response, "❌ sys-rotur is not connected")
     except Exception as e:
-        await ctx.response.send_message(f"❌ Error checking server status: {str(e)}")
+        await send_message(ctx.response, f"❌ Error checking server status: {str(e)}")
 
 @allowed_everywhere
 @tree.command(name='online', description='Show users connected to roturTW')
@@ -413,42 +462,42 @@ async def online(ctx: discord.Interaction):
         parent_ctx = get_parent_context()
         users = await parent_ctx["get_room_users"]("roturTW")
         if not users:
-            await ctx.response.send_message("No users are currently connected to roturTW.")
+            await send_message(ctx.response, "No users are currently connected to roturTW.")
             return
         lines = []
         for user in users:
             username = user.get("username", "")
             rotur_auth = user.get("rotur", "")
             lines.append(f"{username:<35} Auth: {rotur_auth}")
-        await ctx.response.send_message(f"```\n" + "\n".join(lines) + "\n```")
+        await send_message(ctx.response, f"```\n" + "\n".join(lines) + "\n```")
     except Exception as e:
-        await ctx.response.send_message(f"❌ Error fetching online users: {str(e)}")
+        await send_message(ctx.response, f"❌ Error fetching online users: {str(e)}")
 
 @allowed_everywhere
 @tree.command(name='totalusers', description='Display the total number of rotur users')
 async def totalusers(ctx: discord.Interaction):
     users = requests.get(f"{server}/stats/users").json()
     if not isinstance(users, dict) or 'total_users' not in users:
-        await ctx.response.send_message("Error fetching user statistics.")
+        await send_message(ctx.response, "Error fetching user statistics.")
         return
     total_users = users.get('total_users', 0)
-    await ctx.response.send_message(f"Total rotur users: {total_users}")
+    await send_message(ctx.response, f"Total rotur users: {total_users}")
 
 @allowed_everywhere
 @tree.command(name='usage', description='Check your file system usage')
 async def usage(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     if ofsf is None:
-        await ctx.response.send_message("The file system usage service is not available right now.")
+        await send_message(ctx.response, "The file system usage service is not available right now.")
         return
     usage_data = ofsf.get_user_file_size(user.get("username", "unknown"))
     if usage_data is None:
-        await ctx.response.send_message("No file system found for your account.")
+        await send_message(ctx.response, "No file system found for your account.")
         return
-    await ctx.response.send_message(f'Your file system is: {usage_data}')
+    await send_message(ctx.response, f'Your file system is: {usage_data}')
 
 @allowed_everywhere
 @tree.command(name='changepass', description='[EPHEMERAL] Change the password of your linked rotur account')
@@ -457,12 +506,12 @@ async def changepass(ctx: discord.Interaction, new_password: str):
     # Require a linked account
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", True)
         return
 
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", True)
         return
 
     # Hash the provided password as requested (raw value should be the md5 hash)
@@ -475,16 +524,16 @@ async def changepass(ctx: discord.Interaction, new_password: str):
             data=json.dumps({"key": "password", "value": hashed, "auth": token})
         )
         if resp.status_code == 200:
-            await ctx.response.send_message("Your rotur password has been changed.", ephemeral=True)
+            await send_message(ctx.response, "Your rotur password has been changed.", ephemeral=True)
         else:
             # Surface server error if present
             try:
                 err = resp.json().get('error')
             except Exception:
                 err = None
-            await ctx.response.send_message(err or f"Failed to change password. Server responded with status {resp.status_code}.", ephemeral=True)
+            await send_message(ctx.response, err or f"Failed to change password. Server responded with status {resp.status_code}.", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error changing password: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error changing password: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='rich', description='See the leaderboard of who earned the most')
@@ -493,7 +542,7 @@ async def rich(ctx: discord.Interaction, limit: int = 10):
     limit = min(limit, max_fields)
     users = requests.get(f"{server}/stats/most_gained?max={limit}").json()
     if users is None:
-        await ctx.response.send_message("Error: Unable to retrieve user data.")
+        await send_message(ctx.response, "Error: Unable to retrieve user data.")
         return
 
     embed = discord.Embed(title="Richest Users", description="Leaderboard of top earners")
@@ -507,7 +556,7 @@ async def rich(ctx: discord.Interaction, limit: int = 10):
 async def most_followed(ctx: discord.Interaction):
     users = requests.get(f"{server}/stats/followers").json()
     if users is None:
-        await ctx.response.send_message("Error: Unable to retrieve user data.")
+        await send_message(ctx.response, "Error: Unable to retrieve user data.")
         return
 
     embed = discord.Embed(title="Most Followed Users", description="Leaderboard of the most followed users")
@@ -522,24 +571,24 @@ async def most_followed(ctx: discord.Interaction):
 async def follow(ctx: discord.Interaction, username: str):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
 
     try:
         resp = requests.get(f"{server}/follow?auth={token}&name={username}")
         if resp.status_code == 200:
-            await ctx.response.send_message(f"You are now following {username}.")
+            await send_message(ctx.response, f"You are now following {username}.")
         else:
             result = resp.json()
             error_msg = result.get('error', f'Failed to follow user. Server responded with status {resp.status_code}.')
-            await ctx.response.send_message(error_msg, ephemeral=True)
+            await send_message(ctx.response, error_msg, ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error following user: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error following user: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='unfollow', description='Unfollow a user on rotur')
@@ -547,31 +596,31 @@ async def follow(ctx: discord.Interaction, username: str):
 async def unfollow(ctx: discord.Interaction, username: str):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
 
     try:
         resp = requests.get(f"{server}/unfollow?auth={token}&name={username}")
         if resp.status_code == 200:
-            await ctx.response.send_message(f"You are no longer following {username}.")
+            await send_message(ctx.response, f"You are no longer following {username}.")
         else:
             result = resp.json()
             error_msg = result.get('error', f'Failed to unfollow user. Server responded with status {resp.status_code}.')
-            await ctx.response.send_message(error_msg, ephemeral=True)
+            await send_message(ctx.response, error_msg, ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error unfollowing user: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error unfollowing user: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='following', description='View users you are following')
 async def following_list(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
 
     try:
@@ -581,61 +630,61 @@ async def following_list(ctx: discord.Interaction):
             following_list = user_data.get('following', [])
             
             if not following_list:
-                await ctx.response.send_message("You are not following any users.")
+                await send_message(ctx.response, "You are not following any users.")
                 return
 
             embed = discord.Embed(title="Users You Are Following", description="\n".join(following_list))
             await ctx.response.send_message(embed=embed)
         else:
-            await ctx.response.send_message("Failed to retrieve following list.", ephemeral=True)
+            await send_message(ctx.response, "Failed to retrieve following list.", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error retrieving following list: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error retrieving following list: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='subscribe', description='Subscribe to Lite (15 credits per month)')
 async def subscribe(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     if user.get("sys.subscription", {}).get("tier", "Free") != "Free":
-        await ctx.response.send_message("You already have an active subscription.", ephemeral=True)
+        await send_message(ctx.response, "You already have an active subscription.", ephemeral=True)
         return
     try:
         resp = requests.get(f"{server}/keys/buy/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
         if resp.status_code == 200:
-            await ctx.response.send_message("You have successfully subscribed to Lite.")
+            await send_message(ctx.response, "You have successfully subscribed to Lite.")
         else:
-            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}")
+            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}")
     except Exception as e:
-        await ctx.response.send_message(f"Error subscribing to Lite: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error subscribing to Lite: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='unsubscribe', description='Unsubscribe from Lite')
 async def unsubscribe(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     if user.get("sys.subscription", {}).get("tier", "Free") != "Lite":
-        await ctx.response.send_message("You are not subscribed to Lite.", ephemeral=True)
+        await send_message(ctx.response, "You are not subscribed to Lite.", ephemeral=True)
         return
     try:
         resp = requests.delete(f"{server}/keys/cancel/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
         if resp.status_code == 200:
-            await ctx.response.send_message("You have successfully unsubscribed from Lite.")
+            await send_message(ctx.response, "You have successfully unsubscribed from Lite.")
         else:
-            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}")
+            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}")
     except Exception as e:
-        await ctx.response.send_message(f"Error unsubscribing from Lite: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error unsubscribing from Lite: {str(e)}", ephemeral=True)
 
 # Marriage Commands Group
 marriage = app_commands.Group(name='marriage', description='Commands related to rotur marriage system')
@@ -647,11 +696,11 @@ tree.add_command(marriage)
 async def blocked(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     blocked = user.get("sys.blocked")
     if not blocked:
-        await ctx.response.send_message("You are not blocking anyone.")
+        await send_message(ctx.response, "You are not blocking anyone.")
         return
 
     embed = discord.Embed(title="Users You Are Blocking", description="\n".join(blocked))
@@ -662,16 +711,16 @@ async def blocked(ctx: discord.Interaction):
 async def block(ctx: discord.Interaction, username: str):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     try:
-        await ctx.response.send_message(rotur.block_user(token, username))
+        await send_message(ctx.response, rotur.block_user(token, username))
     except Exception as e:
-        await ctx.response.send_message(f"Error blocking user: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error blocking user: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='unblock', description='Unblock a user on rotur')
@@ -679,16 +728,16 @@ async def block(ctx: discord.Interaction, username: str):
 async def unblock(ctx: discord.Interaction, username: str):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     try:
-        await ctx.response.send_message(rotur.unblock_user(token, username))
+        await send_message(ctx.response, rotur.unblock_user(token, username))
     except Exception as e:
-        await ctx.response.send_message(f"Error unblocking user: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error unblocking user: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @marriage.command(name='propose', description='Propose marriage to another rotur user')
@@ -697,23 +746,23 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
     # Get user's rotur account
     user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
-        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
     
     auth_key = user_data.get('key')
     if not auth_key:
-        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
         return
     
     # Get target user's rotur account to find their Discord ID
     target_user_data = rotur.get_user_by('username', username)
     if target_user_data is None or target_user_data.get('error') == "User not found":
-        await ctx.response.send_message(f'User **{username}** not found on rotur.', ephemeral=True)
+        await send_message(ctx.response, f'User **{username}** not found on rotur.', ephemeral=True)
         return
     
     target_discord_id = target_user_data.get('discord_id')
     if not target_discord_id:
-        await ctx.response.send_message(f'User **{username}** is not linked to a Discord account.', ephemeral=True)
+        await send_message(ctx.response, f'User **{username}** is not linked to a Discord account.', ephemeral=True)
         return
     
     try:
@@ -739,9 +788,9 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
             
             await ctx.response.send_message(embed=embed, view=view)
         else:
-            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error sending proposal: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error sending proposal: {str(e)}", ephemeral=True)
 
 class ProposalView(discord.ui.View):
     def __init__(self, target_discord_id: str, proposer_username: str, target_username: str):
@@ -860,12 +909,12 @@ async def marriage_accept(ctx: discord.Interaction):
     # Get user's rotur account
     user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
-        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
     
     auth_key = user_data.get('key')
     if not auth_key:
-        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
         return
     
     try:
@@ -881,9 +930,9 @@ async def marriage_accept(ctx: discord.Interaction):
             )
             await ctx.response.edit_message(embed=embed, view=None)
         else:
-            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error accepting proposal: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error accepting proposal: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @marriage.command(name='reject', description='Reject your pending marriage proposal')
@@ -891,12 +940,12 @@ async def marriage_reject(ctx: discord.Interaction):
     # Get user's rotur account
     user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
-        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
     
     auth_key = user_data.get('key')
     if not auth_key:
-        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
         return
     
     try:
@@ -912,9 +961,9 @@ async def marriage_reject(ctx: discord.Interaction):
             )
             await ctx.response.edit_message(embed=embed, view=None)
         else:
-            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error rejecting proposal: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error rejecting proposal: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @marriage.command(name='cancel', description='Cancel your pending marriage proposal')
@@ -922,12 +971,12 @@ async def marriage_cancel(ctx: discord.Interaction):
     # Get user's rotur account
     user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
-        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
     
     auth_key = user_data.get('key')
     if not auth_key:
-        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
         return
     
     try:
@@ -943,9 +992,9 @@ async def marriage_cancel(ctx: discord.Interaction):
             )
             await ctx.response.send_message(embed=embed)
         else:
-            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error cancelling proposal: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error cancelling proposal: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @marriage.command(name='divorce', description='Divorce your current spouse')
@@ -953,12 +1002,12 @@ async def marriage_divorce(ctx: discord.Interaction):
     # Get user's rotur account
     user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
-        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
     
     auth_key = user_data.get('key')
     if not auth_key:
-        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
         return
     
     try:
@@ -974,9 +1023,9 @@ async def marriage_divorce(ctx: discord.Interaction):
             )
             await ctx.response.send_message(embed=embed)
         else:
-            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error processing divorce: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error processing divorce: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @marriage.command(name='status', description='Check your marriage status')
@@ -984,12 +1033,12 @@ async def marriage_status(ctx: discord.Interaction):
     # Get user's rotur account
     user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
-        await ctx.response.send_message('You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
+        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
     
     auth_key = user_data.get('key')
     if not auth_key:
-        await ctx.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
+        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
         return
     
     try:
@@ -1036,9 +1085,9 @@ async def marriage_status(ctx: discord.Interaction):
             
             await ctx.response.send_message(embed=embed)
         else:
-            await ctx.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error checking marriage status: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error checking marriage status: {str(e)}", ephemeral=True)
 
 @tree.command(name='here', description='Ping people in your thread')
 async def here(ctx: discord.Interaction):
@@ -1047,11 +1096,11 @@ async def here(ctx: discord.Interaction):
 
     #check if the user owns the curreny thread
     if ctx.channel.type != discord.ChannelType.public_thread and ctx.channel.type != discord.ChannelType.private_thread:
-        await ctx.response.send_message("This command can only be used in a thread.", ephemeral=True)
+        await send_message(ctx.response, "This command can only be used in a thread.", ephemeral=True)
         return
 
     if ctx.channel.owner_id != ctx.user.id:
-        await ctx.response.send_message("You do not own this thread.", ephemeral=True)
+        await send_message(ctx.response, "You do not own this thread.", ephemeral=True)
         return
     
     await ctx.response.send_message("@here", allowed_mentions=discord.AllowedMentions(everyone=True))
@@ -1062,13 +1111,13 @@ async def here(ctx: discord.Interaction):
 async def link(ctx: discord.Interaction, username: str, password: str):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user and user.get('error') != "User not found":
-        await ctx.response.send_message("You are already linked to a rotur account.", ephemeral=True)
+        await send_message(ctx.response, "You are already linked to a rotur account.", ephemeral=True)
         return
     hashed_password = hashlib.md5(password.encode()).hexdigest()
     user = requests.get(f"{server}/get_user?username={username}&password={hashed_password}").json()
     token = user.get("key")
     if not token:
-        await ctx.response.send_message(user.get('error', 'Unknown error occurred.'), ephemeral=True)
+        await send_message(ctx.response, user.get('error', 'Unknown error occurred.'), ephemeral=True)
         return
     try:
         resp = requests.patch(
@@ -1077,11 +1126,11 @@ async def link(ctx: discord.Interaction, username: str, password: str):
             data=json.dumps({"key": "discord_id", "value": str(ctx.user.id), "auth": token})
         )
         if resp.status_code == 200:
-            await ctx.response.send_message("Your Discord account has been linked to your rotur account.", ephemeral=True)
+            await send_message(ctx.response, "Your Discord account has been linked to your rotur account.", ephemeral=True)
         else:
-            await ctx.response.send_message(f"Failed to link account. Server responded with status {resp.status_code}.", ephemeral=True)
+            await send_message(ctx.response, f"Failed to link account. Server responded with status {resp.status_code}.", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error linking account: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error linking account: {str(e)}", ephemeral=True)
     return
 
 @tree.command(name='icon', description='Render an icn file')
@@ -1135,7 +1184,7 @@ async def refresh_token_cmd(ctx: discord.Interaction):
     try:
         resp = requests.post(f"{server}/me/refresh_token?auth={old_token}")
     except Exception as e:
-        await ctx.response.send_message(f"Error contacting server: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
         return
 
     status = resp.status_code
@@ -1146,7 +1195,7 @@ async def refresh_token_cmd(ctx: discord.Interaction):
 
     if status != 200 or payload.get('error'):
         err = payload.get('error', f'Server responded with status {status}.')
-        await ctx.response.send_message(f"Failed to refresh token: {err}", ephemeral=True)
+        await send_message(ctx.response, f"Failed to refresh token: {err}", ephemeral=True)
         return
 
     try:
@@ -1232,7 +1281,7 @@ async def syncpfp(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='gamble', description='Gamble your credits for a chance to win more')
 async def gamble(ctx: discord.Interaction, amount: float):
-    await ctx.response.send_message("This command is currently disabled. If you want more credits: https://ko-fi.com/s/eebeb7269f")
+    await send_message(ctx.response, "This command is currently disabled. If you want more credits: https://ko-fi.com/s/eebeb7269f")
     return
 
 @allowed_everywhere
@@ -1240,35 +1289,35 @@ async def gamble(ctx: discord.Interaction, amount: float):
 async def all_keys(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     
     try:
         keys = {k: v for k, v in user.items() if k not in ['username', 'discord_id', 'key', 'pfp', 'banner']}
         if not keys:
-            await ctx.response.send_message("No keys found in your account.", ephemeral=True)
+            await send_message(ctx.response, "No keys found in your account.", ephemeral=True)
             return
         lines = [f"{key}, " for key, value in keys.items()]
-        await ctx.response.send_message("```\n" + "".join(lines) + "\n```")
+        await send_message(ctx.response, "```\n" + "".join(lines) + "\n```")
     except Exception as e:
-        await ctx.response.send_message(f"Error retrieving keys: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error retrieving keys: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='created', description='Get the creation date of your account')
 async def created(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
 
     created_at = user.get('created', "Unknown")
     if not isinstance(created_at, (int, float)):
-        await ctx.response.send_message("Invalid creation date format.")
+        await send_message(ctx.response, "Invalid creation date format.")
         return
 
     embed = discord.Embed(
@@ -1283,7 +1332,7 @@ async def created(ctx: discord.Interaction):
 async def balance(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     
     balance = user.get('sys.currency', 0)
@@ -1297,12 +1346,12 @@ async def balance(ctx: discord.Interaction):
 async def transfer_credits(ctx: discord.Interaction, username: str, amount: float, note: str = ""):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
 
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
 
     try:
@@ -1312,27 +1361,27 @@ async def transfer_credits(ctx: discord.Interaction, username: str, amount: floa
             data=json.dumps({"to": username, "amount": amount, "note": note})
         )
         if resp.status_code == 200:
-            await ctx.response.send_message(f"Successfully transferred {amount} credits to {username}." + (f"\nNote: {note}" if note else ""))
+            await send_message(ctx.response, f"Successfully transferred {amount} credits to {username}." + (f"\nNote: {note}" if note else ""))
         else:
-            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error transferring credits: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error transferring credits: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @transfer.command(name='discord', description='Transfer credits to a Discord user')
 async def transfer_discord(ctx: discord.Interaction, discord_user: discord.User, amount: float, note: str = ""):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     to_user = rotur.get_user_by('discord_id', str(discord_user.id))
     if to_user is None or to_user.get('error') == "User not found":
-        await ctx.response.send_message("Recipient user is not linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "Recipient user is not linked to rotur.", ephemeral=True)
         return
 
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.")
+        await send_message(ctx.response, "No auth token found for your account.")
         return
 
     try:
@@ -1342,11 +1391,11 @@ async def transfer_discord(ctx: discord.Interaction, discord_user: discord.User,
             data=json.dumps({"to": to_user["username"], "amount": amount, "note": note})
         )
         if resp.status_code == 200:
-            await ctx.response.send_message(f"Successfully transferred {amount} credits to {to_user["username"]}." + (f"\nNote: {note}" if note else ""))
+            await send_message(ctx.response, f"Successfully transferred {amount} credits to {to_user["username"]}." + (f"\nNote: {note}" if note else ""))
         else:
-            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error transferring credits: {str(e)}")
+        await send_message(ctx.response, f"Error transferring credits: {str(e)}")
 
 @allowed_everywhere
 @keys.command(name='set', description='Set a key in your account')
@@ -1354,12 +1403,12 @@ async def transfer_discord(ctx: discord.Interaction, discord_user: discord.User,
 async def set_key(ctx: discord.Interaction, key: str, value: str):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
 
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
 
     try:
@@ -1369,11 +1418,11 @@ async def set_key(ctx: discord.Interaction, key: str, value: str):
             data=json.dumps({"key": key, "value": value, "auth": token})
         )
         if resp.status_code == 200:
-            await ctx.response.send_message(f"Key '{key}' set to '{value}'.")
+            await send_message(ctx.response, f"Key '{key}' set to '{value}'.")
         else:
-            await ctx.response.send_message(f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error setting key: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error setting key: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @keys.command(name='del', description='Delete a key from your account')
@@ -1381,12 +1430,12 @@ async def set_key(ctx: discord.Interaction, key: str, value: str):
 async def del_key(ctx: discord.Interaction, key: str):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
 
     try:
@@ -1396,11 +1445,11 @@ async def del_key(ctx: discord.Interaction, key: str):
             data=json.dumps({"key": key, "auth": token})
         )
         if resp.status_code == 204:
-            await ctx.response.send_message(f"Key '{key}' deleted successfully.")
+            await send_message(ctx.response, f"Key '{key}' deleted successfully.")
         else:
-            await ctx.response.send_message(f"Failed to delete key '{key}'. Server responded with status {resp.status_code}.", ephemeral=True)
+            await send_message(ctx.response, f"Failed to delete key '{key}'. Server responded with status {resp.status_code}.", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error deleting key: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error deleting key: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @keys.command(name='get', description='Get a key from your account')
@@ -1408,15 +1457,15 @@ async def del_key(ctx: discord.Interaction, key: str):
 async def get_key(ctx: discord.Interaction, key: str):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     
     if key not in user:
-        await ctx.response.send_message(f"Key '{key}' not found in your account.", ephemeral=True)
+        await send_message(ctx.response, f"Key '{key}' not found in your account.", ephemeral=True)
         return
 
     if key in ["key", "password"]:
-        await ctx.response.send_message(f"You cannot display this key, it contains sensitive information", ephemeral=True)
+        await send_message(ctx.response, f"You cannot display this key, it contains sensitive information", ephemeral=True)
     
     value = user[key]
     embed = discord.Embed(
@@ -1447,9 +1496,9 @@ async def tod(ctx: discord.Interaction, mode: str = 'truth'):
             )
             await ctx.response.send_message(embed=embed)
         else:
-            await ctx.response.send_message("Sorry, couldn't fetch a question right now.", ephemeral=True)
+            await send_message(ctx.response, "Sorry, couldn't fetch a question right now.", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message("An error occurred while fetching the question.", ephemeral=True)
+        await send_message(ctx.response, "An error occurred while fetching the question.", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='quote', description='Generate a quote image from a message')
@@ -1516,7 +1565,7 @@ async def accorigins(ctx: discord.Interaction):
     embed = discord.Embed(title="Account Origins", color=discord.Color.blue())
     
     if not system_stats or not isinstance(system_stats, dict):
-        await ctx.response.send_message("Error fetching system statistics.")
+        await send_message(ctx.response, "Error fetching system statistics.")
         return
     
     total = sum(system_stats.values())
@@ -1537,13 +1586,13 @@ async def accorigins(ctx: discord.Interaction):
 @tree.command(name='counting', description='Get counting statistics for the current channel')
 async def counting_stats(ctx: discord.Interaction):
     if ctx.channel is None:
-        await ctx.response.send_message("This command can only be used in a channel!", ephemeral=True)
+        await send_message(ctx.response, "This command can only be used in a channel!", ephemeral=True)
         return
 
     channel_id = str(ctx.channel.id)
 
     if channel_id != counting.COUNTING_CHANNEL_ID:
-        await ctx.response.send_message("This command only works in the counting channel!", ephemeral=True)
+        await send_message(ctx.response, "This command only works in the counting channel!", ephemeral=True)
         return
 
     stats = counting.get_counting_stats(channel_id)
@@ -1639,17 +1688,17 @@ async def counting_stats(ctx: discord.Interaction):
 @tree.command(name='reset_counting', description='Reset the counting (Admin only)')
 async def reset_counting(ctx: discord.Interaction):
     if str(ctx.user.id) != mistium:  # Only mistium can reset
-        await ctx.response.send_message("❌ Only administrators can reset the counting!", ephemeral=True)
+        await send_message(ctx.response, "❌ Only administrators can reset the counting!", ephemeral=True)
         return
     
     if ctx.channel is None:
-        await ctx.response.send_message("This command can only be used in a channel!", ephemeral=True)
+        await send_message(ctx.response, "This command can only be used in a channel!", ephemeral=True)
         return
         
     channel_id = str(ctx.channel.id)
     
     if channel_id != counting.COUNTING_CHANNEL_ID:
-        await ctx.response.send_message("This command only works in the counting channel!", ephemeral=True)
+        await send_message(ctx.response, "This command only works in the counting channel!", ephemeral=True)
         return
     
     state = counting.get_channel_state(channel_id)
@@ -1960,10 +2009,10 @@ async def on_message(message):
             reply = await message.reply("Thinking...")
             resp = await query_cerebras(messages, reply)
             if not isinstance(resp, dict):
-                await reply.edit(content="Sorry, I encountered an error processing your request.")
+                await reply.edit(content=catify("Sorry, I encountered an error processing your request."))
                 return
             if resp is None:
-                await reply.edit(content="Sorry, I didn't receive a response.")
+                await reply.edit(content=catify("Sorry, I didn't receive a response."))
                 return
             
             content = ""
@@ -1974,7 +2023,7 @@ async def on_message(message):
             if not content or content.strip() == "":
                 content = "Sorry, I couldn't generate a response to that."
             
-            await reply.edit(content=content)
+            await reply.edit(content=catify(content))
             return
 
     print(f"\033[94m[+] Discord Message\033[0m | {message.author.name}: {message.content}")
@@ -1993,6 +2042,14 @@ async def on_message(message):
             if message.guild is None or str(message.guild.id) != originOS:
                 return
             await channel.send("https://origin.mistium.com")
+        case "!cat_mode":
+            if str(message.author.id) != mistium:
+                return
+            global catmaid_mode
+            if message.guild is None or str(message.guild.id) != originOS:
+                return
+            catmaid_mode = not catmaid_mode
+            await channel.send(f"Cat mode is now {'enabled' if catmaid_mode else 'disabled'}.")
         case '!send':
             if message.guild is None and str(message.author.id) == "1155814166976811048": # rattus paid me credits for this
                 general_channel = client.get_channel(1338555310335463557)  # rotur general
