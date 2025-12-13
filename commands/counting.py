@@ -151,14 +151,14 @@ def extract_number_from_message(content: str) -> Optional[float]:
     
     return None
 
-def is_rotur_user(user_id: str) -> bool:
+def is_rotur_user(user_id: str) -> str:
     """Check if a user has a rotur account"""
     try:
         user = rotur.get_user_by('discord_id', user_id)
-        return user is not None and user.get('error') != "User not found"
+        return user.get('username', "")
     except Exception as e:
         print(f"Error checking rotur user: {e}")
-        return False
+        return ""
 
 def _get_or_create_user(state: Dict, user_id: str) -> Dict:
     users = state.setdefault('users', {})
@@ -208,18 +208,48 @@ async def handle_counting_message(message, channel):
         except Exception as e:
             await channel.send(f"❌ Error setting count: {e}")
         return True
+
+    boost = content.startswith("!boost")
+
     
     number = extract_number_from_message(content)
-    if number is None:
+    if number is None and not boost:
         return True
     
-    if not is_rotur_user(user_id):
+    username = is_rotur_user(user_id)
+    if username == "":
         try:
             await channel.send(
                 f"❌ {message.author.mention} you need a rotur account to participate in counting! Link your account with /link"
             )
         except:
             pass
+        return True
+
+    if boost:
+        split = content.split(" ")
+        if len(split) < 2:
+            await channel.send("❌ Usage: `!boost <number>`")
+            return True
+        boostBy = 0
+        try:
+            boostBy = int(split[1])
+        except:
+            await channel.send("❌ Number must be an integer")
+            return True
+        if boostBy < 1:
+            await channel.send("❌ Number must be greater than 0")
+            return True
+        resp = rotur.transfer_credits(username, "rotur", boostBy, "Counting Boost")
+        if resp.get('error'):
+            await channel.send(f"❌ Error boosting: {resp.get('error')}")
+            return True
+        addTo = boostBy * 10
+        state["current_count"] += addTo
+        await channel.send(f"✅ Boosted count by {addTo} using {boostBy} credits, the next number is **{state['current_count'] + 1}**!")
+        return True
+    
+    if number is None:
         return True
 
     expected_count = state["current_count"] + 1
