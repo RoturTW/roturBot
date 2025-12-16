@@ -208,6 +208,15 @@ async def award_daily_credit(user_id, credit_amount):
         username = user.get("username")
         if not username:
             return False, "No username found"
+
+        try:
+            currency = float(user.get("currency", 0))
+            if currency > 500:
+                credit_amount /= 2
+            if currency > 1000:
+                return False, "Balance is too high"
+        except:
+            pass
         
         result = rotur.transfer_credits("rotur", username, credit_amount, "daily credit")
 
@@ -534,22 +543,6 @@ async def changepass(ctx: discord.Interaction, new_password: str):
             await send_message(ctx.response, err or f"Failed to change password. Server responded with status {resp.status_code}.", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error changing password: {str(e)}", ephemeral=True)
-
-@allowed_everywhere
-@tree.command(name='rich', description='See the leaderboard of who earned the most')
-async def rich(ctx: discord.Interaction, limit: int = 10):
-    max_fields = 25
-    limit = min(limit, max_fields)
-    users = requests.get(f"{server}/stats/most_gained?max={limit}").json()
-    if users is None:
-        await send_message(ctx.response, "Error: Unable to retrieve user data.")
-        return
-
-    embed = discord.Embed(title="Richest Users", description="Leaderboard of top earners")
-    for i, user in enumerate(users):
-        embed.add_field(name=f"{i + 1}. {user.get('user', 'unknown')}", value=f"Earned: {round(user.get('earned', 0))}", inline=False)
-
-    await ctx.response.send_message(embed=embed)
 
 @allowed_everywhere
 @tree.command(name='most_followed', description='See the leaderboard of the most followed users')
