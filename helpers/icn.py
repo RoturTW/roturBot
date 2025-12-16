@@ -48,6 +48,10 @@ def draw(icon: str, width=40, height=40, scale=1.5):
             origin_x = base_x
             origin_y = base_y
 
+        elif cmd == "scale":
+            scale *= float(commands[i])
+            i += 1
+
         elif cmd == "square":
             x, y, w, h = map(float, commands[i:i+4])
             i += 4
