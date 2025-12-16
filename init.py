@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from .commands import stats, roturacc, counting
 from .helpers import rotur
 from .helpers.quote_generator import quote_generator
+from .helpers import icn
+from .helpers.icon_cache import IconCache
 import requests, json, os, random, string, re
 import aiohttp
 from io import BytesIO
@@ -357,6 +359,23 @@ async def daily_credits_scheduler():
             print(f"Error in daily credits scheduler: {e}")
             await asyncio.sleep(3600)
 
+async def icon_cache_cleanup_scheduler():
+    """Schedule icon cache cleanup every 24 hours"""
+    await client.wait_until_ready()
+    
+    while not client.is_closed():
+        try:
+            await asyncio.sleep(86400)
+            
+            if icon_cache:
+                print("Running icon cache cleanup...")
+                removed = await icon_cache.cleanup_old_emojis()
+                print(f"Icon cache cleanup complete: {removed} emojis removed")
+            
+        except Exception as e:
+            print(f"Error in icon cache cleanup scheduler: {e}")
+            await asyncio.sleep(3600)
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
@@ -368,6 +387,8 @@ client = discord.Client(intents=intents)
 last_daily_announcement_date = None
 daily_scheduler_started = False
 battery_notifier_started = False
+icon_cache_cleanup_started = False
+icon_cache = None
 
 tree = app_commands.CommandTree(client)
 
@@ -401,53 +422,91 @@ keys = app_commands.allowed_installs(guilds=True, users=True)(keys)
 keys = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(keys)
 tree.add_command(keys)
 
-def create_embed_from_user(user):
+async def create_embeds_from_user(user, use_emoji_badges=True):
     """Create an embed from a user object."""
-    embed = discord.Embed(
+    badges = user.get('badges', [])
+    badge_emojis = []
+    
+    if use_emoji_badges and icon_cache and badges:
+        try:
+            badge_emojis = await icon_cache.get_badge_emojis(badges)
+        except Exception as e:
+            print(f"Error getting badge emojis: {e}")
+    
+    bio_text = rotur.bio_from_obj(user)
+    if badge_emojis:
+        badges_line = " ".join(badge_emojis)
+        description = f"{badges_line}\n\n{bio_text}"
+    else:
+        description = bio_text
+    
+    main_embed = discord.Embed(
         title=user.get('username', 'Unknown User'),
-        description=rotur.bio_from_obj(user),
+        description=description,
         color=discord.Color.blue()
     )
+
+    banner_embed = None
+    badge_file = None
     
     username = user.get('username')
     if username and isinstance(username, str) and username.strip():
         if user.get('pfp'):
-            embed.set_thumbnail(url=f"https://avatars.rotur.dev/{username}.gif?nocache={randomString(5)}")
+            main_embed.set_thumbnail(url=f"https://avatars.rotur.dev/{username}.gif?nocache={randomString(5)}")
+            
         if user.get('banner'):
-            embed.set_image(url=f"https://avatars.rotur.dev/.banners/{username}.gif?nocache={randomString(5)}")
+            main_embed.set_image(url=f"https://avatars.rotur.dev/.banners/{username}.gif?nocache={randomString(5)}")
     
-    return embed
+    embeds = [main_embed]
+    return embeds, badge_file
 
 @allowed_everywhere
 @tree.command(name='me', description='View your rotur profile')
 async def me(ctx: discord.Interaction):
-    user = requests.get(f"{server}/profile?include_posts=0&discord_id={ctx.user.id}").json()
+    await ctx.response.defer()
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{server}/profile?include_posts=0&discord_id={ctx.user.id}") as resp:
+            user = await resp.json()
+    
     if user is None or user.get('error') == "User not found":
-        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.')
+        await ctx.followup.send('You are not linked to a rotur account. Please link your account using `/link` command.')
         return
     
-    await ctx.response.send_message(embed=create_embed_from_user(user))
+    embeds, badge_file = await create_embeds_from_user(user)
+    if badge_file:
+        await ctx.followup.send(embeds=embeds, file=badge_file)
+    else:
+        await ctx.followup.send(embeds=embeds)
     return
 
 @allowed_everywhere
 @tree.command(name='user', description='View a user\'s rotur profile')
 @app_commands.describe(username='The username of the user to view')
 async def user(ctx: discord.Interaction, username: str):
-    user = requests.get(f"{server}/profile?include_posts=0&name={username}").json()
+    await ctx.response.defer()
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{server}/profile?include_posts=0&name={username}") as resp:
+            user = await resp.json()
+    
     if user is None:
-        await send_message(ctx.response, 'User not found.')
+        await ctx.followup.send('User not found.')
         return
 
-    print(str(user.get('private', False)).lower())
     if (str(user.get('private', False)).lower() == "true"):
-        await ctx.response.send_message(embed=discord.Embed(
+        await ctx.followup.send(embed=discord.Embed(
             title="Private Profile",
             description="This user has a private profile. You cannot view their details.",
             color=discord.Color.red()
         ))
         return
 
-    await ctx.response.send_message(embed=create_embed_from_user(user))
+    embeds, badge_file = await create_embeds_from_user(user)
+    if badge_file:
+        await ctx.followup.send(embeds=embeds, file=badge_file)
+    else:
+        await ctx.followup.send(embeds=embeds)
     return
 
 @allowed_everywhere
@@ -1129,7 +1188,28 @@ async def link(ctx: discord.Interaction, username: str, password: str):
 @tree.command(name='icon', description='Render an icn file')
 @app_commands.describe(icon='The icn file to render', size='The size of the icon')
 async def icon(ctx: discord.Interaction, icon: str, size: float):
-    return
+    try:
+        icon = icon.strip()
+        if not icon:
+            await send_message(ctx.response, "Icon is required", ephemeral=True)
+            return
+        
+        size = float(size)
+        if size <= 0:
+            await send_message(ctx.response, "Size must be greater than 0", ephemeral=True)
+            return
+        
+        width = 500
+        height = 500
+        
+        img = icn.draw(icon, width=width, height=height, scale=size)
+        buffer = BytesIO()
+        img.save(buffer, format="png")
+        buffer.seek(0)
+        file = discord.File(buffer, filename="icn.png")
+        await ctx.response.send_message(file=file)
+    except Exception as e:
+        await send_message(ctx.response, f"Error rendering icon: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='unlink', description='[EPHEMERAL] Unlink your Discord account from your rotur account')
@@ -2252,6 +2332,16 @@ async def on_ready():
     print(f'Logged in as {client.user}')
     print('------')
     counting.init_state_file(_MODULE_DIR)
+    
+    global icon_cache
+    if icon_cache is None:
+        try:
+            cache_file = os.path.join(_MODULE_DIR, "store", "icon_cache.json")
+            icon_cache = IconCache(cache_file, client)
+            print(f'Icon cache initialized with {len(icon_cache.cache)} cached application emojis')
+        except Exception as e:
+            print(f'Failed to initialize icon cache: {e}')
+    
     try:
         synced = await tree.sync()
         print(f'Synced {len(synced)} command(s)')
@@ -2271,6 +2361,13 @@ async def on_ready():
         print('Daily credits scheduler started')
     else:
         print('Daily credits scheduler already running; skipping new task')
+    global icon_cache_cleanup_started
+    if not icon_cache_cleanup_started and icon_cache:
+        asyncio.create_task(icon_cache_cleanup_scheduler())
+        icon_cache_cleanup_started = True
+        print('Icon cache cleanup scheduler started')
+    else:
+        print('Icon cache cleanup scheduler already running or cache not initialized; skipping new task')
 
 token = os.getenv('DISCORD_BOT_TOKEN')
 if token is None:
