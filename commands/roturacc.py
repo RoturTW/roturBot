@@ -45,7 +45,9 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] sub <tier>",
                 "!roturacc banned_words",
                 "!roturacc <word> ban_word",
-                "!roturacc <word> unban_word"
+                "!roturacc <word> unban_word",
+                "!roturacc <username> add_badge <badge>",
+                "!roturacc <username> remove_badge <badge>"
             ]
             await channel.send("\n".join(lines))
             return
@@ -224,3 +226,55 @@ async def query(spl, channel, user, dir):
             with open(os.path.join('./banned_words.json'), 'w') as f:
                 json.dump(words, f)
             await channel.send(f"Unbanned word {word}.")
+        case "add_badge":
+            if not isMistium:
+                await channel.send("Only mistium can add badges")
+                return
+            username = spl[1]
+            badge = spl[3]
+            if username == "" or badge == "":
+                await channel.send("Usage: !roturacc <username> add_badge <badge>")
+                return
+            user_data = rotur.get_user_by("username", username)
+            if (not user_data or user_data.get("username", "") == "") or (not isMistium and user_data.get("system") != user_system["name"]):
+                await channel.send(f"User {username} not found in your system.")
+                return
+            with open(os.path.join('./rotur/badges.json'), 'r') as f:
+                badges = json.load(f)
+            for badge_data in badges:
+                if badge_data.get("name") == badge:
+                    if username in badge_data["users"]:
+                        await channel.send(f"User {username} is already a member of badge {badge}.")
+                        return
+                    badge_data["users"].append(username)
+                    with open(os.path.join('./rotur/badges.json'), 'w') as f:
+                        json.dump(badges, f)
+                    await channel.send(f"Added badge {badge} to {username}.")
+                    return
+            await channel.send(f"Badge {badge} not found.")
+        case "remove_badge":
+            if not isMistium:
+                await channel.send("Only mistium can remove badges")
+                return
+            username = spl[1]
+            badge = spl[3]
+            if username == "" or badge == "":
+                await channel.send("Usage: !roturacc <username> remove_badge <badge>")
+                return
+            user_data = rotur.get_user_by("username", username)
+            if (not user_data or user_data.get("username", "") == "") or (not isMistium and user_data.get("system") != user_system["name"]):
+                await channel.send(f"User {username} not found in your system.")
+                return
+            with open(os.path.join('./rotur/badges.json'), 'r') as f:
+                badges = json.load(f)
+            for badge_data in badges:
+                if badge_data.get("name") == badge:
+                    if username not in badge_data["users"]:
+                        await channel.send(f"User {username} is not a member of badge {badge}.")
+                        return
+                    badge_data["users"].remove(username)
+                    with open(os.path.join('./rotur/badges.json'), 'w') as f:
+                        json.dump(badges, f)
+                    await channel.send(f"Removed badge {badge} from {username}.")
+                    return
+            await channel.send(f"Badge {badge} not found.")
