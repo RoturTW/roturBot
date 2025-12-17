@@ -20,6 +20,18 @@ def draw(icon: str, width=40, height=40, scale=1.5):
     def ty(y):
         return origin_y - y * scale
 
+    def draw_line_with_caps(x1, y1, x2, y2, color, width):
+        """Helper function to draw a line with rounded end caps"""
+        sx1, sy1 = tx(x1), ty(y1)
+        sx2, sy2 = tx(x2), ty(y2)
+        
+        lw = max(1, int(width * scale))
+        w2 = width * scale / 2
+        
+        draw.line([sx1, sy1, sx2, sy2], fill=color, width=lw)
+        draw.ellipse([sx1 - w2, sy1 - w2, sx1 + w2, sy1 + w2], fill=color)
+        draw.ellipse([sx2 - w2, sy2 - w2, sx2 + w2, sy2 + w2], fill=color)
+
     commands = icon.split()
     px, py = 0, 0
     i = 0
@@ -105,6 +117,11 @@ def draw(icon: str, width=40, height=40, scale=1.5):
                 (tx(x3), ty(y3))
             ]
             draw.polygon(points, fill=current_color)
+            
+            draw_line_with_caps(x1, y1, x2, y2, current_color, line_width)
+            draw_line_with_caps(x2, y2, x3, y3, current_color, line_width)
+            draw_line_with_caps(x3, y3, x1, y1, current_color, line_width)
+            
             px, py = x3, y3
 
         elif cmd == "dot":
@@ -125,46 +142,14 @@ def draw(icon: str, width=40, height=40, scale=1.5):
             x1, y1, x2, y2 = map(float, commands[i:i+4])
             i += 4
 
-            sx1, sy1 = tx(x1), ty(y1)
-            sx2, sy2 = tx(x2), ty(y2)
-
-            lw = max(1, int(line_width * scale))
-            w2 = line_width * scale / 2
-            
-            draw.line(
-                [sx1, sy1, sx2, sy2],
-                fill=current_color,
-                width=lw,
-            )
-            draw.ellipse(
-                [sx1 - w2, sy1 - w2, sx1 + w2, sy1 + w2],
-                fill=current_color
-            )
-            draw.ellipse(
-                [sx2 - w2, sy2 - w2, sx2 + w2, sy2 + w2],
-                fill=current_color
-            )
+            draw_line_with_caps(x1, y1, x2, y2, current_color, line_width)
             px, py = x2, y2
 
         elif cmd == "cont":
             x, y = map(float, commands[i:i+2])
             i += 2
 
-            sx1, sy1 = tx(px), ty(py)
-            sx2, sy2 = tx(x), ty(y)
-            
-            lw = max(1, int(line_width * scale))
-            w2 = line_width * scale / 2
-            
-            draw.line(
-                [sx1, sy1, sx2, sy2],
-                fill=current_color,
-                width=lw,
-            )
-            draw.ellipse(
-                [sx2 - w2, sy2 - w2, sx2 + w2, sy2 + w2],
-                fill=current_color
-            )
+            draw_line_with_caps(px, py, x, y, current_color, line_width)
             px, py = x, y
 
         elif cmd == "cutcircle":
