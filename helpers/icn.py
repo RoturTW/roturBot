@@ -98,6 +98,13 @@ def draw(icon: str, width=40, height=40, scale=1.5):
             x, y, w, h = map(float, commands[i:i+4])
             i += 4
 
+            corners = [
+                (x - w, y + h),
+                (x + w, y + h),
+                (x + w, y - h),
+                (x - w, y - h),
+            ]
+            
             draw.rectangle(
                 [
                     tx(x - w), ty(y + h),
@@ -105,6 +112,24 @@ def draw(icon: str, width=40, height=40, scale=1.5):
                 ],
                 fill=current_color
             )
+            
+            lw = max(1, int(line_width * scale))
+            w2 = line_width * scale / 2
+            
+            for j in range(4):
+                x1, y1 = corners[j]
+                x2, y2 = corners[(j + 1) % 4]
+                
+                sx1, sy1 = tx(x1), ty(y1)
+                sx2, sy2 = tx(x2), ty(y2)
+                
+                draw.line([sx1, sy1, sx2, sy2], fill=current_color, width=lw)
+                
+                draw.ellipse(
+                    [sx1 - w2, sy1 - w2, sx1 + w2, sy1 + w2],
+                    fill=current_color
+                )
+            
             px, py = x, y
 
         elif cmd == "tri":
