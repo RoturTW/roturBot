@@ -248,7 +248,7 @@ async def query(spl, channel, user, dir):
                         return
                     badge_data["users"].append(username)
                     with open(os.path.join('./rotur/badges.json'), 'w') as f:
-                        json.dump(badges, f)
+                        json.dump(badges, f, indent=4)
                     await channel.send(f"Added badge {badge} to {username}.")
                     return
             await channel.send(f"Badge {badge} not found.")
@@ -274,7 +274,7 @@ async def query(spl, channel, user, dir):
                         return
                     badge_data["users"].remove(username)
                     with open(os.path.join('./rotur/badges.json'), 'w') as f:
-                        json.dump(badges, f)
+                        json.dump(badges, f, indent=4)
                     await channel.send(f"Removed badge {badge} from {username}.")
                     return
             await channel.send(f"Badge {badge} not found.")
