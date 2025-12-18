@@ -58,7 +58,9 @@ INSERT_POINTS = [",", ".", "!", "?"]
 
 catmaid_mode = False
 
-def catify(text: str):
+def catify(text: str | None):
+    if text is None:
+        return None
     if not catmaid_mode:
         return text
 
@@ -73,10 +75,16 @@ def catify(text: str):
             w = re.sub(r"\b(n)([aeiou])", r"ny\2", w, flags=re.IGNORECASE)
         return w
 
-    words = text.split()
-    words = [phonetics(w) for w in words]
-
-    new = " ".join(words)
+    lines = text.split('\n')
+    processed_lines = []
+    
+    for line in lines:
+        words = line.split()
+        words = [phonetics(w) for w in words]
+        new = " ".join(words)
+        processed_lines.append(new)
+    
+    new = '\n'.join(processed_lines)
 
     # Step 2 — occasional stutter (10% chance)
     if random.random() < 0.10:
@@ -94,10 +102,62 @@ def catify(text: str):
     return new
 
 
-async def send_message(ctx, message, ephemeral=False):
-    if message:
-        message = catify(message)
-    await ctx.send_message(message, ephemeral=ephemeral)
+async def send_message(
+        ctx: discord.InteractionResponse | discord.Webhook,
+        message: str | None = None,
+        embed: discord.Embed | None = None,
+        embeds: list[discord.Embed] | None = None,
+        view: discord.ui.View | None = None,
+        allowed_mentions: discord.AllowedMentions | None = None,
+        file: discord.File | None = None,
+        files: list[discord.File] | None = None,
+        ephemeral: bool = False
+    ):
+
+    if embed is not None:
+        embeds = [embed]
+    if embeds is None:
+        embeds = []
+    if catmaid_mode:
+        if message:
+            message = catify(message)
+
+        if embeds is not None:
+            for embed in embeds:
+                if embed.title is not None:
+                    embed.title = catify(embed.title)
+
+                if embed.description is not None:
+                    embed.description = catify(embed.description)
+
+                for i, field in enumerate(embed.fields):
+                    embed.set_field_at(
+                        i,
+                        name=catify(field.name) if field.name else field.name,
+                        value=catify(field.value) if field.value else field.value,
+                        inline=field.inline,
+                    )
+
+    if message is None:
+        message = ""
+    if allowed_mentions is None:
+        allowed_mentions = discord.AllowedMentions.none()
+
+    if file is not None:
+        files = [file]
+    if files is None:
+        files = []
+    
+    if isinstance(ctx, discord.InteractionResponse):
+        if view is not None:
+            await ctx.send_message(message, embeds=embeds, files=files, ephemeral=ephemeral, view=view, allowed_mentions=allowed_mentions)
+        else:
+            await ctx.send_message(message, embeds=embeds, files=files, ephemeral=ephemeral, allowed_mentions=allowed_mentions)
+    else:
+        if view is not None:
+            await ctx.send(message, embeds=embeds, files=files, ephemeral=ephemeral, view=view, allowed_mentions=allowed_mentions)
+        else:
+            await ctx.send(message, embeds=embeds, files=files, ephemeral=ephemeral, allowed_mentions=allowed_mentions)
 
 def load_activity_exclusions():
     """Load the list of users excluded from activity alerts"""
@@ -445,9 +505,6 @@ async def create_embeds_from_user(user, use_emoji_badges=True):
         description=description,
         color=discord.Color.blue()
     )
-
-    banner_embed = None
-    badge_file = None
     
     username = user.get('username')
     if username and isinstance(username, str) and username.strip():
@@ -458,7 +515,7 @@ async def create_embeds_from_user(user, use_emoji_badges=True):
             main_embed.set_image(url=f"https://avatars.rotur.dev/.banners/{username}.gif?nocache={randomString(5)}")
     
     embeds = [main_embed]
-    return embeds, badge_file
+    return embeds
 
 @allowed_everywhere
 @tree.command(name='me', description='View your rotur profile')
@@ -470,14 +527,11 @@ async def me(ctx: discord.Interaction):
             user = await resp.json()
     
     if user is None or user.get('error') == "User not found":
-        await ctx.followup.send('You are not linked to a rotur account. Please link your account using `/link` command.')
+        await send_message(ctx.followup, 'You are not linked to a rotur account. Please link your account using `/link` command.')
         return
     
-    embeds, badge_file = await create_embeds_from_user(user)
-    if badge_file:
-        await ctx.followup.send(embeds=embeds, file=badge_file)
-    else:
-        await ctx.followup.send(embeds=embeds)
+    embeds = await create_embeds_from_user(user)
+    await send_message(ctx.followup, embeds=embeds)
     return
 
 @allowed_everywhere
@@ -491,23 +545,19 @@ async def user(ctx: discord.Interaction, username: str):
             user = await resp.json()
     
     if user is None:
-        await ctx.followup.send('User not found.')
+        await send_message(ctx.followup, 'User not found.')
         return
 
     if (str(user.get('private', False)).lower() == "true"):
-        await ctx.followup.send(embed=discord.Embed(
+        await send_message(ctx.followup, embeds=[discord.Embed(
             title="Private Profile",
             description="This user has a private profile. You cannot view their details.",
             color=discord.Color.red()
-        ))
+        )])
         return
 
-    embeds, badge_file = await create_embeds_from_user(user)
-    if badge_file:
-        await ctx.followup.send(embeds=embeds, file=badge_file)
-    else:
-        await ctx.followup.send(embeds=embeds)
-    return
+    embeds = await create_embeds_from_user(user)
+    await send_message(ctx.followup, embeds=embeds)
 
 @allowed_everywhere
 @tree.command(name='up', description='Check if the rotur auth server is online')
@@ -574,12 +624,12 @@ async def changepass(ctx: discord.Interaction, new_password: str):
     # Require a linked account
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await send_message(ctx.response, "You aren't linked to rotur.", True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
 
     token = user.get("key")
     if not token:
-        await send_message(ctx.response, "No auth token found for your account.", True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
 
     # Hash the provided password as requested (raw value should be the md5 hash)
@@ -615,7 +665,7 @@ async def most_followed(ctx: discord.Interaction):
     for i, user in enumerate(users):
         embed.add_field(name=f"{i + 1}. {user.get('username', 'unknown')}", value=f"Followers: {user.get('follower_count', 0)}", inline=False)
 
-    await ctx.response.send_message(embed=embed)
+    await send_message(ctx.response, embeds=[embed])
 
 @allowed_everywhere
 @tree.command(name='follow', description='Follow a user on rotur')
@@ -686,7 +736,7 @@ async def following_list(ctx: discord.Interaction):
                 return
 
             embed = discord.Embed(title="Users You Are Following", description="\n".join(following_list))
-            await ctx.response.send_message(embed=embed)
+            await send_message(ctx.response, embed=embed)
         else:
             await send_message(ctx.response, "Failed to retrieve following list.", ephemeral=True)
     except Exception as e:
@@ -756,7 +806,7 @@ async def blocked(ctx: discord.Interaction):
         return
 
     embed = discord.Embed(title="Users You Are Blocking", description="\n".join(blocked))
-    await ctx.response.send_message(embed=embed)
+    await send_message(ctx.response, embed=embed)
 
 @tree.command(name='block', description='Block a user on rotur')
 @app_commands.describe(username='The username of the user to block')
@@ -838,7 +888,7 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
                 inline=False
             )
             
-            await ctx.response.send_message(embed=embed, view=view)
+            await send_message(ctx.response, embed=embed, view=view)
         else:
             await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
@@ -1042,7 +1092,7 @@ async def marriage_cancel(ctx: discord.Interaction):
                 description="You have cancelled your marriage proposal.",
                 color=discord.Color.orange()
             )
-            await ctx.response.send_message(embed=embed)
+            await send_message(ctx.response, embed=embed)
         else:
             await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
@@ -1073,7 +1123,7 @@ async def marriage_divorce(ctx: discord.Interaction):
                 description="You are now divorced.",
                 color=discord.Color.orange()
             )
-            await ctx.response.send_message(embed=embed)
+            await send_message(ctx.response, embed=embed)
         else:
             await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
@@ -1135,7 +1185,7 @@ async def marriage_status(ctx: discord.Interaction):
                     color=discord.Color.greyple()
                 )
             
-            await ctx.response.send_message(embed=embed)
+            await send_message(ctx.response, embed=embed)
         else:
             await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
     except Exception as e:
@@ -1155,7 +1205,7 @@ async def here(ctx: discord.Interaction):
         await send_message(ctx.response, "You do not own this thread.", ephemeral=True)
         return
     
-    await ctx.response.send_message("@here", allowed_mentions=discord.AllowedMentions(everyone=True))
+    await send_message(ctx.response, "@here", allowed_mentions=discord.AllowedMentions(everyone=True))
 
 @allowed_everywhere
 @tree.command(name='link', description='[EPHEMERAL] Link your Discord account to your rotur account')
@@ -1207,7 +1257,7 @@ async def icon(ctx: discord.Interaction, icon: str, size: float):
         img.save(buffer, format="png")
         buffer.seek(0)
         file = discord.File(buffer, filename="icn.png")
-        await ctx.response.send_message(file=file)
+        await send_message(ctx.response, file=file)
     except Exception as e:
         await send_message(ctx.response, f"Error rendering icon: {str(e)}", ephemeral=True)
 
@@ -1216,11 +1266,11 @@ async def icon(ctx: discord.Interaction, icon: str, size: float):
 async def unlink(ctx: discord.Interaction):
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user.get('error') == "User not found" or user is None:
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
     token = user.get("key")
     if not token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     try:
         resp = requests.patch(
@@ -1229,11 +1279,11 @@ async def unlink(ctx: discord.Interaction):
             data=json.dumps({"key": "discord_id", "value": "", "auth": token})
         )
         if resp.status_code == 200:
-            await ctx.response.send_message("Your Discord account has been unlinked from your rotur account.", ephemeral=True)
+            await send_message(ctx.response, "Your Discord account has been unlinked from your rotur account.", ephemeral=True)
         else:
-            await ctx.response.send_message(f"Failed to unlink account. Server responded with status {resp.status_code}.", ephemeral=True)
+            await send_message(ctx.response, f"Failed to unlink account. Server responded with status {resp.status_code}.", ephemeral=True)
     except Exception as e:
-        await ctx.response.send_message(f"Error unlinking account: {str(e)}", ephemeral=True)
+        await send_message(ctx.response, f"Error unlinking account: {str(e)}", ephemeral=True)
     return
 
 @allowed_everywhere
@@ -1246,12 +1296,12 @@ async def refresh_token_cmd(ctx: discord.Interaction):
     """
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == 'User not found':
-        await ctx.response.send_message("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
 
     old_token = user.get('key')
     if not old_token:
-        await ctx.response.send_message("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
 
     try:
@@ -1299,7 +1349,7 @@ async def refresh_token_cmd(ctx: discord.Interaction):
     else:
         embed.add_field(name='Usage', value='Your token is now refreshed.', inline=False)
 
-    await ctx.response.send_message(embed=embed, ephemeral=True)
+    await send_message(ctx.response, embed=embed, ephemeral=True)
     return
 
 @allowed_everywhere
@@ -1313,11 +1363,11 @@ async def syncpfp(ctx: discord.Interaction):
 
     user = rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
-        await ctx.followup.send("You aren't linked to rotur.", ephemeral=True)
+        await send_message(ctx.followup, "You aren't linked to rotur.", ephemeral=True)
         return
     token = user.get("key")
     if not token:
-        await ctx.followup.send("No auth token found for your account.", ephemeral=True)
+        await send_message(ctx.followup, "No auth token found for your account.", ephemeral=True)
         return
     try:
         # Fetch user's Discord avatar bytes
@@ -1339,16 +1389,16 @@ async def syncpfp(ctx: discord.Interaction):
                 timeout=aiohttp.ClientTimeout(total=20)
             ) as resp:
                 if resp.status == 200:
-                    await ctx.followup.send("Your profile picture has been synced to rotur.", ephemeral=True)
+                    await send_message(ctx.followup, "Your profile picture has been synced to rotur.", ephemeral=True)
                 else:
-                    await ctx.followup.send(
+                    await send_message(ctx.followup,
                         f"Failed to sync profile picture. Server responded with status {resp.status}, message: {await resp.text()}",
                         ephemeral=True,
                     )
             rotur.update_user("update", user.get("username"), "pfp", f"{user.get('username')}?nocache={randomString(5)}")
     except Exception as e:
         # Use followup since we've already deferred
-        await ctx.followup.send(f"Error syncing profile picture: {str(e)}", ephemeral=True)
+        await send_message(ctx.followup, f"Error syncing profile picture: {str(e)}", ephemeral=True)
     return
 
 @allowed_everywhere
@@ -1398,7 +1448,7 @@ async def created(ctx: discord.Interaction):
         description=f"Your account was created on: <t:{round(created_at / 1000)}:f>",
         color=discord.Color.green()
     )
-    await ctx.response.send_message(embed=embed)
+    await send_message(ctx.response, embed=embed)
 
 @allowed_everywhere
 @tree.command(name='balance', description='Check your current credit balance')
@@ -1412,7 +1462,7 @@ async def balance(ctx: discord.Interaction):
     embed = discord.Embed(
         title=f"You have {balance} credits",
     )
-    await ctx.response.send_message(embed=embed, ephemeral=True)
+    await send_message(ctx.response, embed=embed, ephemeral=True)
 
 @allowed_everywhere
 @transfer.command(name='rotur', description='Transfer credits to another user')
@@ -1546,7 +1596,7 @@ async def get_key(ctx: discord.Interaction, key: str):
         description=f"{value}",
         color=discord.Color.blue()
     )
-    await ctx.response.send_message(embed=embed)
+    await send_message(ctx.response, embed=embed)
 
 @allowed_everywhere
 @tree.command(name='tod', description='Play truth or dare')
@@ -1567,7 +1617,7 @@ async def tod(ctx: discord.Interaction, mode: str = 'truth'):
                 description=question,
                 color=0x00ff00 if mode == 'truth' else 0xff0000
             )
-            await ctx.response.send_message(embed=embed)
+            await send_message(ctx.response, embed=embed)
         else:
             await send_message(ctx.response, "Sorry, couldn't fetch a question right now.", ephemeral=True)
     except Exception as e:
@@ -1582,7 +1632,7 @@ async def quote_command(ctx: discord.Interaction, message_id: str):
         
         channel = ctx.channel
         if channel is None or not hasattr(channel, "fetch_message"):
-            await ctx.followup.send("❌ This channel does not support fetching messages (e.g. Category/Forum or no context); please run this in a text channel and provide a valid message ID.", ephemeral=True)
+            await send_message(ctx.followup, "❌ This channel does not support fetching messages (e.g. Category/Forum or no context); please run this in a text channel and provide a valid message ID.", ephemeral=True)
             return
 
         try:
@@ -1590,21 +1640,21 @@ async def quote_command(ctx: discord.Interaction, message_id: str):
                 return
             message = await channel.fetch_message(int(message_id))
         except ValueError:
-            await ctx.followup.send("❌ Invalid message ID.", ephemeral=True)
+            await send_message(ctx.followup, "❌ Invalid message ID.", ephemeral=True)
             return
         except discord.NotFound:
-            await ctx.followup.send("❌ Message not found.", ephemeral=True)
+            await send_message(ctx.followup, "❌ Message not found.", ephemeral=True)
             return
         except discord.Forbidden:
-            await ctx.followup.send("❌ No permission to access that message.", ephemeral=True)
+            await send_message(ctx.followup, "❌ No permission to access that message.", ephemeral=True)
             return
         except Exception as e:
             print(f"Error fetching message: {e}")
-            await ctx.followup.send("❌ An error occurred while fetching the message.", ephemeral=True)
+            await send_message(ctx.followup, "❌ An error occurred while fetching the message.", ephemeral=True)
             return
 
         if message.author.bot:
-            await ctx.followup.send("❌ Cannot quote bot messages.", ephemeral=True)
+            await send_message(ctx.followup, "❌ Cannot quote bot messages.", ephemeral=True)
             return
         
         quote_image = await quote_generator.generate_quote_image(
@@ -1619,17 +1669,17 @@ async def quote_command(ctx: discord.Interaction, message_id: str):
                 file=discord.File(quote_image, filename="quote.png")
             )
         else:
-            await ctx.followup.send("❌ Failed to generate quote image.", ephemeral=True)
+            await send_message(ctx.followup, "❌ Failed to generate quote image.", ephemeral=True)
             
     except ValueError:
-        await ctx.followup.send("❌ Invalid message ID.", ephemeral=True)
+        await send_message(ctx.followup, "❌ Invalid message ID.", ephemeral=True)
     except discord.NotFound:
-        await ctx.followup.send("❌ Message not found.", ephemeral=True)
+        await send_message(ctx.followup, "❌ Message not found.", ephemeral=True)
     except discord.Forbidden:
-        await ctx.followup.send("❌ No permission to access that message.", ephemeral=True)
+        await send_message(ctx.followup, "❌ No permission to access that message.", ephemeral=True)
     except Exception as e:
         print(f"Error in quote command: {e}")
-        await ctx.followup.send("❌ An error occurred while generating the quote.", ephemeral=True)
+        await send_message(ctx.followup, "❌ An error occurred while generating the quote.", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='accorigins', description='Get stats on how many accounts are linked to each rotur OS')
@@ -1653,7 +1703,7 @@ async def accorigins(ctx: discord.Interaction):
         )
     
     embed.set_footer(text=f"Total: {total} users")
-    await ctx.response.send_message(embed=embed)
+    await send_message(ctx.response, embed=embed)
 
 @allowed_everywhere
 @tree.command(name='counting', description='Get counting statistics for the current channel')
@@ -1661,11 +1711,12 @@ async def counting_stats(ctx: discord.Interaction):
     if ctx.channel is None:
         await send_message(ctx.response, "This command can only be used in a channel!", ephemeral=True)
         return
+    await ctx.response.defer()
 
     channel_id = str(ctx.channel.id)
 
     if channel_id != counting.COUNTING_CHANNEL_ID:
-        await send_message(ctx.response, "This command only works in the counting channel!", ephemeral=True)
+        await send_message(ctx.followup, "This command only works in the counting channel!", ephemeral=True)
         return
 
     stats = counting.get_counting_stats(channel_id)
@@ -1755,7 +1806,7 @@ async def counting_stats(ctx: discord.Interaction):
 
     embed.set_footer(text="Only users with rotur accounts can participate!")
 
-    await ctx.response.send_message(embed=embed)
+    await send_message(ctx.response, embed=embed)
 
 @allowed_everywhere
 @tree.command(name='reset_counting', description='Reset the counting (Admin only)')
@@ -1786,7 +1837,7 @@ async def reset_counting(ctx: discord.Interaction):
         color=discord.Color.orange()
     )
     
-    await ctx.response.send_message(embed=embed)
+    await send_message(ctx.response, embed=embed)
 
 @allowed_everywhere
 @tree.command(name='counting_help', description='Learn how the counting game works')
@@ -1836,7 +1887,7 @@ async def counting_help(ctx: discord.Interaction):
     
     embed.set_footer(text="Link your rotur account using /link")
     
-    await ctx.response.send_message(embed=embed, ephemeral=True)
+    await send_message(ctx.response, embed=embed, ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='activity_alert', description='Toggle activity alerts for role changes')
@@ -1857,7 +1908,7 @@ async def activity_alert(ctx: discord.Interaction):
             color=discord.Color.green()
         )
     
-    await ctx.response.send_message(embed=embed, ephemeral=True)
+    await send_message(ctx.response, embed=embed, ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='daily_credit_dm', description='Toggle receiving a DM when daily credits are awarded (opt-in)')
@@ -1876,13 +1927,13 @@ async def daily_credit_dm(ctx: discord.Interaction):
             color=discord.Color.orange()
         )
     embed.set_footer(text="Use /daily_credit_dm again to toggle.")
-    await ctx.response.send_message(embed=embed, ephemeral=True)
+    await send_message(ctx.response, embed=embed, ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='process_daily_credits', description='[Admin] Manually reset daily credits and announce new day')
 async def manual_daily_credits(ctx: discord.Interaction):
     if str(ctx.user.id) != mistium:
-        await ctx.response.send_message("❌ Only administrators can run this command!", ephemeral=True)
+        await send_message(ctx.response, "❌ Only administrators can run this command!", ephemeral=True)
         return
     
     await ctx.response.defer()
@@ -2637,7 +2688,7 @@ async def on_message_delete(message):
             if deleted_value is None:
                 await message.channel.send("A counted message was deleted. Next number may have changed.")
             else:
-                new_current = max(0, deleted_value - 1)
+                new_current = max(0, deleted_value)
                 state['current_count'] = new_current
                 state['last_count_message_id'] = None
                 state['last_count_value'] = None
