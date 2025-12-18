@@ -229,7 +229,7 @@ def draw(icon: str, width=40, height=40, scale=1.5):
             ry = width * multiplier
             rot = (direction / 360) * 2 * math.pi
 
-            steps = 64
+            steps = 100
             points = []
 
             for s in range(steps + 1):
@@ -242,19 +242,22 @@ def draw(icon: str, width=40, height=40, scale=1.5):
 
                 points.append((tx(x + pxr), ty(y + pyr)))
 
+            lw = max(1, int(line_width * scale))
+            
             draw.line(
                 points,
                 fill=current_color,
-                width=max(1, int(line_width * scale)),
+                width=lw,
                 joint="curve"
             )
+            
             px, py = x, y
 
         elif cmd == "curve":
             x1, y1, x2, y2, cx, cy = map(float, commands[i:i+6])
             i += 6
 
-            steps = 32
+            steps = 50
             points = []
 
             for s in range(steps + 1):
@@ -269,19 +272,19 @@ def draw(icon: str, width=40, height=40, scale=1.5):
             draw.line(
                 points,
                 fill=current_color,
-                width=lw
+                width=lw,
+                joint="curve"
             )
             
-            sx1, sy1 = tx(x1), ty(y1)
-            sx2, sy2 = tx(x2), ty(y2)
             draw.ellipse(
-                [sx1 - w2, sy1 - w2, sx1 + w2, sy1 + w2],
+                [points[0][0] - w2, points[0][1] - w2, points[0][0] + w2, points[0][1] + w2],
                 fill=current_color
             )
             draw.ellipse(
-                [sx2 - w2, sy2 - w2, sx2 + w2, sy2 + w2],
+                [points[-1][0] - w2, points[-1][1] - w2, points[-1][0] + w2, points[-1][1] + w2],
                 fill=current_color
             )
+            
             px, py = x2, y2
 
     return img
