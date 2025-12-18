@@ -6,6 +6,13 @@ from .helpers import rotur
 from .helpers.quote_generator import quote_generator
 from .helpers import icn
 from .helpers.icon_cache import IconCache
+
+XP_SYSTEM_ENABLED = False
+
+if XP_SYSTEM_ENABLED:
+    from .helpers import xp_system
+else:
+    xp_system = None
 import requests, json, os, random, string, re
 import aiohttp
 from io import BytesIO
@@ -558,6 +565,137 @@ async def user(ctx: discord.Interaction, username: str):
 
     embeds = await create_embeds_from_user(user)
     await send_message(ctx.followup, embeds=embeds)
+
+@allowed_everywhere
+@tree.command(name='level', description='View your level and XP progress')
+async def level(ctx: discord.Interaction):
+    if not XP_SYSTEM_ENABLED or not xp_system:
+        await send_message(ctx.response, "The XP system is currently disabled.", ephemeral=True)
+        return
+    
+    try:
+        xp_stats = xp_system.get_user_xp_stats(ctx.user.id)
+        level = xp_stats.get('level', 0)
+        xp = xp_stats.get('xp', 0)
+        total_messages = xp_stats.get('total_messages', 0)
+        
+        current_level_xp = xp_system.calculate_xp_for_level(level)
+        next_level_xp = xp_system.calculate_xp_for_level(level + 1)
+        xp_in_level = xp - current_level_xp
+        xp_needed = next_level_xp - current_level_xp
+        
+        progress_percent = (xp_in_level / xp_needed * 100) if xp_needed > 0 else 0
+        
+        filled = int(progress_percent / 5)
+        bar = "█" * filled + "░" * (20 - filled)
+        
+        embed = discord.Embed(
+            title=f"{ctx.user.display_name}'s Level",
+            description=f"**Level {level}**",
+            color=discord.Color.gold()
+        )
+        
+        embed.add_field(
+            name="XP Progress",
+            value=f"`{bar}` {progress_percent:.1f}%\n{xp_in_level:,} / {xp_needed:,} XP",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Total XP",
+            value=f"{xp:,}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Total Messages",
+            value=f"{total_messages:,}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Next Level",
+            value=f"Level {level + 1} at {next_level_xp:,} XP\n({next_level_xp - xp:,} XP remaining)",
+            inline=False
+        )
+        
+        embed.set_thumbnail(url=ctx.user.display_avatar.url)
+        
+        await send_message(ctx.response, embed=embed)
+        
+    except Exception as e:
+        await send_message(ctx.response, f"Error fetching level data: {str(e)}")
+
+@allowed_everywhere
+@tree.command(name='leaderboard', description='View the XP leaderboard')
+async def leaderboard(ctx: discord.Interaction):
+    if not XP_SYSTEM_ENABLED or not xp_system:
+        await send_message(ctx.response, "The XP system is currently disabled.", ephemeral=True)
+        return
+    
+    await ctx.response.defer()
+    
+    try:
+        data = xp_system.load_user_xp_data()
+        
+        if not data:
+            await send_message(ctx.followup, "No leaderboard data available yet!")
+            return
+        
+        sorted_users = sorted(
+            data.items(),
+            key=lambda x: (x[1].get('level', 0), x[1].get('xp', 0)),
+            reverse=True
+        )
+        
+        user_id = str(ctx.user.id)
+        user_rank = None
+        for i, (uid, _) in enumerate(sorted_users, 1):
+            if uid == user_id:
+                user_rank = i
+                break
+        
+        top_10 = sorted_users[:10]
+        
+        leaderboard_text = []
+        for i, (uid, stats) in enumerate(top_10, 1):
+            level = stats.get('level', 0)
+            xp = stats.get('xp', 0)
+            
+            medal = ""
+            if i == 1:
+                medal = "🥇 "
+            elif i == 2:
+                medal = "🥈 "
+            elif i == 3:
+                medal = "🥉 "
+            
+            leaderboard_text.append(f"{medal}**#{i}** <@{uid}> - Level {level} ({xp:,} XP)")
+        
+        embed = discord.Embed(
+            title="XP Leaderboard",
+            description="\n".join(leaderboard_text),
+            color=discord.Color.gold()
+        )
+        
+        if user_rank:
+            user_stats = data[user_id]
+            user_level = user_stats.get('level', 0)
+            user_xp = user_stats.get('xp', 0)
+            
+            if user_rank <= 10:
+                footer_text = f"You are #{user_rank} on the leaderboard!"
+            else:
+                footer_text = f"Your Rank: #{user_rank} - Level {user_level} ({user_xp:,} XP)"
+            
+            embed.set_footer(text=footer_text, icon_url=ctx.user.display_avatar.url)
+        else:
+            embed.set_footer(text="Start chatting to appear on the leaderboard!")
+        
+        await send_message(ctx.followup, embed=embed)
+        
+    except Exception as e:
+        await send_message(ctx.followup, f"Error fetching leaderboard: {str(e)}")
 
 @allowed_everywhere
 @tree.command(name='up', description='Check if the rotur auth server is online')
@@ -1930,6 +2068,29 @@ async def daily_credit_dm(ctx: discord.Interaction):
     await send_message(ctx.response, embed=embed, ephemeral=True)
 
 @allowed_everywhere
+@tree.command(name='levelup_messages', description='Toggle level-up notification messages')
+async def levelup_messages(ctx: discord.Interaction):
+    if not XP_SYSTEM_ENABLED or not xp_system:
+        await send_message(ctx.response, "The XP system is currently disabled.", ephemeral=True)
+        return
+    
+    enabled = xp_system.toggle_levelup_message(ctx.user.id)
+    if enabled:
+        embed = discord.Embed(
+            title="Level-Up Messages Enabled",
+            description="You will receive a message when you level up.",
+            color=discord.Color.green()
+        )
+    else:
+        embed = discord.Embed(
+            title="Level-Up Messages Disabled",
+            description="You will no longer receive level-up messages.",
+            color=discord.Color.orange()
+        )
+    embed.set_footer(text="Use /levelup_messages again to toggle.")
+    await send_message(ctx.response, embed=embed, ephemeral=True)
+
+@allowed_everywhere
 @tree.command(name='process_daily_credits', description='[Admin] Manually reset daily credits and announce new day')
 async def manual_daily_credits(ctx: discord.Interaction):
     if str(ctx.user.id) != mistium:
@@ -2022,6 +2183,26 @@ async def on_message(message):
                     
         except Exception as e:
             print(f"Error processing daily activity: {e}")
+
+    if not message.author.bot and message.guild is not None and str(message.guild.id) == originOS:
+        if XP_SYSTEM_ENABLED and xp_system:
+            try:
+                result = xp_system.award_xp(message.author.id, xp_amount=15)
+                if result:
+                    old_level, new_level, new_xp, total_messages = result
+                    if new_level > old_level and xp_system.is_levelup_message_enabled(message.author.id):
+                        try:
+                            # bots channel in origin
+                            levelup_channel = client.get_channel(1148931532954796072)
+                            if levelup_channel and isinstance(levelup_channel, discord.TextChannel):
+                                next_level_xp = xp_system.calculate_xp_for_level(new_level + 1)
+                                await levelup_channel.send(
+                                    f"Congratulations {message.author.mention}! You've reached **Level {new_level}**! ({next_level_xp - new_xp} XP to next level)"
+                                )
+                        except Exception as e:
+                            print(f"Failed to send level up message: {e}")
+            except Exception as e:
+                print(f"Error awarding XP: {e}")
 
     if await counting.handle_counting_message(message, message.channel):
         return
