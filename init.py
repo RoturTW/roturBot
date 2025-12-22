@@ -489,6 +489,374 @@ keys = app_commands.allowed_installs(guilds=True, users=True)(keys)
 keys = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(keys)
 tree.add_command(keys)
 
+friends = app_commands.Group(name='friends', description='Manage your Rotur friends')
+friends = app_commands.allowed_installs(guilds=True, users=True)(friends)
+friends = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(friends)
+tree.add_command(friends)
+
+requests_group = app_commands.Group(name='requests', description='Manage your incoming friend requests')
+requests_group = app_commands.allowed_installs(guilds=True, users=True)(requests_group)
+requests_group = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(requests_group)
+tree.add_command(requests_group)
+
+
+def _chunk_lines(lines: list[str], chunk_size: int = 20) -> list[str]:
+    if chunk_size <= 0:
+        chunk_size = 20
+    return ["\n".join(lines[i:i + chunk_size]) for i in range(0, len(lines), chunk_size)]
+
+
+def _get_linked_token(discord_user_id: int) -> str | None:
+    """Return the user's rotur auth token if they're linked, else None."""
+    try:
+        user = rotur.get_user_by('discord_id', str(discord_user_id))
+    except Exception:
+        return None
+    if user is None or user.get('error') == 'User not found':
+        return None
+    token = user.get('key')
+    if not token:
+        return None
+    return token
+
+
+def _safe_json(resp) -> dict:
+    try:
+        return resp.json()
+    except Exception:
+        return {}
+
+
+def _is_mistium(user_id: int) -> bool:
+    """Return True if the given Discord user id matches the configured Mistium id."""
+    try:
+        return str(user_id) == str(mistium)
+    except Exception:
+        return False
+
+
+@allowed_everywhere
+@tree.command(name='purge', description='[Mistium only] Delete a number of recent messages from this channel')
+@app_commands.describe(number='How many messages to delete (1-100)')
+async def purge(ctx: discord.Interaction, number: int):
+    # Only Mistium can use this command
+    if not _is_mistium(ctx.user.id):
+        await send_message(ctx.response, 'You do not have permission to use this command.', ephemeral=True)
+        return
+
+    # Validate channel
+    channel = ctx.channel
+    if channel is None or not isinstance(channel, discord.TextChannel):
+        await send_message(ctx.response, 'This command can only be used in a server text channel.', ephemeral=True)
+        return
+
+    # Bound the purge to something Discord will accept in bulk
+    if number is None:
+        number = 0
+    try:
+        number = int(number)
+    except Exception:
+        await send_message(ctx.response, 'Invalid number.', ephemeral=True)
+        return
+    if number <= 0:
+        await send_message(ctx.response, 'Number must be at least 1.', ephemeral=True)
+        return
+    if number > 100:
+        number = 100
+
+    # Defer so we don't hit the interaction 3s timeout
+    try:
+        await ctx.response.defer(ephemeral=True, thinking=True)
+    except Exception:
+        pass
+
+    # Include the invocation message in the deletion set by fetching +1
+    limit = min(100, number + 1)
+    try:
+        messages = [m async for m in channel.history(limit=limit)]
+    except Exception as e:
+        await send_message(ctx.followup, f'Failed to read channel history: {str(e)}', ephemeral=True)
+        return
+
+    if not messages:
+        await send_message(ctx.followup, 'No messages found to delete.', ephemeral=True)
+        return
+
+    deleted_count = 0
+    try:
+        deleted = await channel.delete_messages(messages)
+        deleted_count = len(deleted) if deleted else 0
+    except discord.Forbidden:
+        await send_message(ctx.followup, "I don't have permission to delete messages in this channel.", ephemeral=True)
+        return
+    except discord.HTTPException:
+        deleted_count = 0
+        for m in messages:
+            try:
+                await m.delete()
+                deleted_count += 1
+            except Exception:
+                continue
+    except Exception as e:
+        await send_message(ctx.followup, f'Failed to purge messages: {str(e)}', ephemeral=True)
+        return
+
+    await send_message(ctx.followup, f'Deleted {max(0, deleted_count - 1)} message(s).', ephemeral=True)
+
+
+@allowed_everywhere
+@friends.command(name='add', description='Send a friend request to a user')
+@app_commands.describe(username='The username to send a friend request to')
+async def friends_add(ctx: discord.Interaction, username: str):
+    token = _get_linked_token(ctx.user.id)
+    if not token:
+        await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
+        return
+
+    try:
+        resp = requests.post(f"{server}/friends/request/{username}?auth={token}", timeout=10)
+    except Exception as e:
+        await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
+        return
+
+    payload = _safe_json(resp)
+    if resp.status_code != 200 or payload.get('error'):
+        await send_message(ctx.response, payload.get('error', f"Failed to send request (status {resp.status_code})."), ephemeral=True)
+        return
+
+    await send_message(ctx.response, payload.get('message', f"Friend request sent to {username}."))
+
+
+@allowed_everywhere
+@friends.command(name='remove', description='Remove a friend')
+@app_commands.describe(username='The username to remove from your friends list')
+async def friends_remove(ctx: discord.Interaction, username: str):
+    token = _get_linked_token(ctx.user.id)
+    if not token:
+        await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
+        return
+
+    try:
+        resp = requests.post(f"{server}/friends/remove/{username}?auth={token}", timeout=10)
+    except Exception as e:
+        await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
+        return
+
+    payload = _safe_json(resp)
+    if resp.status_code != 200 or payload.get('error'):
+        await send_message(ctx.response, payload.get('error', f"Failed to remove friend (status {resp.status_code})."), ephemeral=True)
+        return
+
+    await send_message(ctx.response, payload.get('message', f"Removed {username} from your friends."))
+
+
+@allowed_everywhere
+@friends.command(name='list', description='List your friends')
+async def friends_list(ctx: discord.Interaction):
+    token = _get_linked_token(ctx.user.id)
+    if not token:
+        await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
+        return
+
+    try:
+        resp = requests.get(f"{server}/friends?auth={token}", timeout=10)
+    except Exception as e:
+        await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
+        return
+
+    payload = _safe_json(resp)
+    if resp.status_code != 200 or payload.get('error'):
+        await send_message(ctx.response, payload.get('error', f"Failed to fetch friends (status {resp.status_code})."), ephemeral=True)
+        return
+
+    friends_list = payload.get('friends', [])
+    if not friends_list:
+        await send_message(ctx.response, "You don't have any friends yet.")
+        return
+
+    lines = [f"• {u}" for u in friends_list]
+    chunks = _chunk_lines(lines, chunk_size=25)
+    embed = discord.Embed(title="Your Friends", description=chunks[0], color=discord.Color.blurple())
+    if len(chunks) > 1:
+        for idx, chunk in enumerate(chunks[1:6], start=2):
+            embed.add_field(name=f"Friends (page {idx})", value=chunk, inline=False)
+        if len(chunks) > 6:
+            embed.set_footer(text=f"Showing {min(len(friends_list), 25*6)} of {len(friends_list)} friends")
+
+    await send_message(ctx.response, embed=embed)
+
+
+@allowed_everywhere
+@requests_group.command(name='list', description='List your incoming friend requests')
+async def requests_list(ctx: discord.Interaction):
+    token = _get_linked_token(ctx.user.id)
+    if not token:
+        await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
+        return
+
+    # There is no dedicated /friends/requests endpoint. Requests are stored on the user object.
+    try:
+        me = rotur.get_user_by('discord_id', str(ctx.user.id))
+    except Exception as e:
+        await send_message(ctx.response, f"Error reading your profile: {str(e)}", ephemeral=True)
+        return
+
+    if me is None or me.get('error') == 'User not found':
+        await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
+        return
+
+    reqs = me.get('sys.requests', [])
+    if not reqs:
+        await send_message(ctx.response, "You have no pending friend requests.")
+        return
+
+    lines = [f"• {u}" for u in reqs]
+    chunks = _chunk_lines(lines, chunk_size=25)
+    embed = discord.Embed(title="Pending Friend Requests", description=chunks[0], color=discord.Color.gold())
+    if len(chunks) > 1:
+        for idx, chunk in enumerate(chunks[1:6], start=2):
+            embed.add_field(name=f"Requests (page {idx})", value=chunk, inline=False)
+        if len(chunks) > 6:
+            embed.set_footer(text=f"Showing {min(len(reqs), 25*6)} of {len(reqs)} requests")
+
+    await send_message(ctx.response, embed=embed)
+
+
+@allowed_everywhere
+@requests_group.command(name='accept', description='Accept a friend request from a user')
+@app_commands.describe(username='The username whose request you want to accept')
+async def requests_accept(ctx: discord.Interaction, username: str):
+    token = _get_linked_token(ctx.user.id)
+    if not token:
+        await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
+        return
+
+    try:
+        resp = requests.post(f"{server}/friends/accept/{username}?auth={token}", timeout=10)
+    except Exception as e:
+        await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
+        return
+
+    payload = _safe_json(resp)
+    if resp.status_code != 200 or payload.get('error'):
+        await send_message(ctx.response, payload.get('error', f"Failed to accept request (status {resp.status_code})."), ephemeral=True)
+        return
+
+    await send_message(ctx.response, payload.get('message', f"Accepted friend request from {username}."))
+
+
+@allowed_everywhere
+@requests_group.command(name='reject', description='Reject a friend request from a user')
+@app_commands.describe(username='The username whose request you want to reject')
+async def requests_reject(ctx: discord.Interaction, username: str):
+    token = _get_linked_token(ctx.user.id)
+    if not token:
+        await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
+        return
+
+    try:
+        resp = requests.post(f"{server}/friends/reject/{username}?auth={token}", timeout=10)
+    except Exception as e:
+        await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
+        return
+
+    payload = _safe_json(resp)
+    if resp.status_code != 200 or payload.get('error'):
+        await send_message(ctx.response, payload.get('error', f"Failed to reject request (status {resp.status_code})."), ephemeral=True)
+        return
+
+    await send_message(ctx.response, payload.get('message', f"Rejected friend request from {username}."))
+
+
+@allowed_everywhere
+@requests_group.command(name='accept_all', description='Accept all pending friend requests')
+async def requests_accept_all(ctx: discord.Interaction):
+    token = _get_linked_token(ctx.user.id)
+    if not token:
+        await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
+        return
+
+    try:
+        me = rotur.get_user_by('discord_id', str(ctx.user.id))
+    except Exception as e:
+        await send_message(ctx.response, f"Error reading your profile: {str(e)}", ephemeral=True)
+        return
+
+    reqs = (me or {}).get('sys.requests', [])
+    if not reqs:
+        await send_message(ctx.response, "You have no pending friend requests.")
+        return
+
+    accepted = []
+    failed = []
+    for username in reqs:
+        try:
+            resp = requests.post(f"{server}/friends/accept/{username}?auth={token}", timeout=10)
+            payload = _safe_json(resp)
+            if resp.status_code == 200 and not payload.get('error'):
+                accepted.append(username)
+            else:
+                failed.append(f"{username} ({payload.get('error', 'failed')})")
+        except Exception as e:
+            failed.append(f"{username} ({str(e)})")
+
+    msg = f"Accepted {len(accepted)} request(s)."
+    if failed:
+        msg += f" Failed: {len(failed)}."
+
+    embed = discord.Embed(title="Accept All Requests", description=msg, color=discord.Color.green())
+    if accepted:
+        embed.add_field(name="Accepted", value="\n".join(accepted[:50]), inline=False)
+    if failed:
+        embed.add_field(name="Failed", value="\n".join(failed[:25]), inline=False)
+
+    await send_message(ctx.response, embed=embed)
+
+
+@allowed_everywhere
+@requests_group.command(name='reject_all', description='Reject all pending friend requests')
+async def requests_reject_all(ctx: discord.Interaction):
+    token = _get_linked_token(ctx.user.id)
+    if not token:
+        await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
+        return
+
+    try:
+        me = rotur.get_user_by('discord_id', str(ctx.user.id))
+    except Exception as e:
+        await send_message(ctx.response, f"Error reading your profile: {str(e)}", ephemeral=True)
+        return
+
+    reqs = (me or {}).get('sys.requests', [])
+    if not reqs:
+        await send_message(ctx.response, "You have no pending friend requests.")
+        return
+
+    rejected = []
+    failed = []
+    for username in reqs:
+        try:
+            resp = requests.post(f"{server}/friends/reject/{username}?auth={token}", timeout=10)
+            payload = _safe_json(resp)
+            if resp.status_code == 200 and not payload.get('error'):
+                rejected.append(username)
+            else:
+                failed.append(f"{username} ({payload.get('error', 'failed')})")
+        except Exception as e:
+            failed.append(f"{username} ({str(e)})")
+
+    msg = f"Rejected {len(rejected)} request(s)."
+    if failed:
+        msg += f" Failed: {len(failed)}."
+
+    embed = discord.Embed(title="Reject All Requests", description=msg, color=discord.Color.red())
+    if rejected:
+        embed.add_field(name="Rejected", value="\n".join(rejected[:50]), inline=False)
+    if failed:
+        embed.add_field(name="Failed", value="\n".join(failed[:25]), inline=False)
+
+    await send_message(ctx.response, embed=embed)
+
 async def create_embeds_from_user(user, use_emoji_badges=True):
     """Create an embed from a user object."""
     badges = user.get('badges', [])
