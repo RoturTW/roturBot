@@ -1,5 +1,4 @@
 import requests
-from ..helpers import rotur
 
 def query(spl):
     match spl[1]:

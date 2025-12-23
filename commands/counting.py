@@ -151,10 +151,10 @@ def extract_number_from_message(content: str) -> Optional[float]:
     
     return None
 
-def is_rotur_user(user_id: str) -> str:
+async def is_rotur_user(user_id: str) -> str:
     """Check if a user has a rotur account"""
     try:
-        user = rotur.get_user_by('discord_id', user_id)
+        user = await rotur.get_user_by('discord_id', user_id)
         return user.get('username', "")
     except Exception as e:
         print(f"Error checking rotur user: {e}")
@@ -216,7 +216,7 @@ async def handle_counting_message(message, channel):
     if number is None and not boost:
         return True
     
-    username = is_rotur_user(user_id)
+    username = await is_rotur_user(user_id)
     if username == "":
         try:
             await channel.send(
@@ -240,7 +240,7 @@ async def handle_counting_message(message, channel):
         if boostBy < 1:
             await channel.send("❌ Number must be greater than 0")
             return True
-        resp = rotur.transfer_credits(username, "rotur", boostBy, "Counting Boost")
+        resp = await rotur.transfer_credits(username, "rotur", boostBy, "Counting Boost")
         if resp.get('error'):
             await channel.send(f"❌ Error boosting: {resp.get('error')}")
             return True

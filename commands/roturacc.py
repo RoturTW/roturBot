@@ -75,7 +75,7 @@ async def query(spl, channel, user, dir):
             await channel.send(f"File system size for {username}: {usage_data}")
         case 'get':
             username = spl[1]
-            user_data = rotur.get_user_by("username", username)
+            user_data = await rotur.get_user_by("username", username)
             user_data.pop("password", None)
             if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
@@ -93,7 +93,7 @@ async def query(spl, channel, user, dir):
                 return
             key = spl[3]
             value = " ".join(spl[4:])
-            user_data = rotur.get_user_by("username", username)
+            user_data = await rotur.get_user_by("username", username)
             if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
@@ -113,7 +113,7 @@ async def query(spl, channel, user, dir):
                 except Exception:
                     await channel.send(f"Invalid currency value: {value}")
                     return
-            response = rotur.update_user("update", username, key, send_value)
+            response = await rotur.update_user("update", username, key, send_value)
             if response.get("error"):
                 await channel.send(f"Error updating user {username}: {response['error']}")
                 return
@@ -123,7 +123,7 @@ async def query(spl, channel, user, dir):
                 await channel.send("Usage: !roturacc <username> remove <key>")
                 return
             key = spl[3]
-            user_data = rotur.get_user_by("username", username)
+            user_data = await rotur.get_user_by("username", username)
             if not user_data or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
@@ -134,18 +134,18 @@ async def query(spl, channel, user, dir):
             if key not in user_data:
                 await channel.send(f"Key {key} not found for user {username}.")
                 return
-            response = rotur.update_user("remove", username, key)
+            response = await rotur.update_user("remove", username, key)
             if response.get("error"):
                 await channel.send(f"Error removing {key} for user {username}: {response['error']}")
                 return
             await channel.send(f"Removed {key} for user {username}.")
         case 'delete':
-            user_data = rotur.get_user_by("username", username)
+            user_data = await rotur.get_user_by("username", username)
             if (not user_data or user_data.get("username", "") == "") or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
 
-            resp = rotur.delete_user(user_data.get("username"))
+            resp = await rotur.delete_user(user_data.get("username"))
             if "error" in resp:
                 await channel.send(resp.get("error"))
             else:
@@ -154,8 +154,8 @@ async def query(spl, channel, user, dir):
             if not isMistium:
                 await channel.send("Only mistium can view users")
                 return
-            user_data = rotur.get_user_by("username", "mist")
-            users = rotur.get_users(spl[1], user_data.get("key"))
+            user_data = await rotur.get_user_by("username", "mist")
+            users = await rotur.get_users(spl[1], user_data.get("key"))
             if not users:
                 await channel.send("No users found.")
                 return
@@ -168,7 +168,7 @@ async def query(spl, channel, user, dir):
             if not isMistium:
                 await channel.send("Only mistium can view tokens")
                 return
-            user_data = rotur.get_user_by("username", username)
+            user_data = await rotur.get_user_by("username", username)
             if not user_data:
                 await channel.send(f"User {username} not found.")
                 return
@@ -183,11 +183,11 @@ async def query(spl, channel, user, dir):
             if username == "" or sub == "":
                 await channel.send("Usage: !roturacc <username> add_sub <subscription>")
                 return
-            user_data = rotur.get_user_by("username", username)
+            user_data = await rotur.get_user_by("username", username)
             if (not user_data or user_data.get("username", "") == "") or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
-            resp = rotur.add_subscription(username, sub)
+            resp = await rotur.add_subscription(username, sub)
             if "error" in resp:
                 await channel.send(resp.get("error"))
             else:
@@ -235,7 +235,7 @@ async def query(spl, channel, user, dir):
             if username == "" or badge == "":
                 await channel.send("Usage: !roturacc <username> add_badge <badge>")
                 return
-            user_data = rotur.get_user_by("username", username)
+            user_data = await rotur.get_user_by("username", username)
             if (not user_data or user_data.get("username", "") == "") or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
@@ -261,7 +261,7 @@ async def query(spl, channel, user, dir):
             if username == "" or badge == "":
                 await channel.send("Usage: !roturacc <username> remove_badge <badge>")
                 return
-            user_data = rotur.get_user_by("username", username)
+            user_data = await rotur.get_user_by("username", username)
             if (not user_data or user_data.get("username", "") == "") or (not isMistium and user_data.get("system") != user_system["name"]):
                 await channel.send(f"User {username} not found in your system.")
                 return
