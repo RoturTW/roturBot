@@ -33,8 +33,6 @@ from datetime import datetime, timezone, timedelta
 status_sync_cache = {}  # {user_id: {'last_status': str, 'last_sync': timestamp}}
 STATUS_SYNC_COOLDOWN = 5  # seconds between syncs for the same user
 
-server = os.getenv("CENTRAL_SERVER", "https://api.rotur.dev")
-
 def randomString(length):
     """Generate a random string of specified length"""
     letters = string.ascii_lowercase + string.digits
@@ -270,7 +268,7 @@ def get_user_highest_role_credit(member):
 async def award_daily_credit(user_id, credit_amount):
     """Award daily credit to a user via the rotur API"""
     try:
-        user = rotur.get_user_by('discord_id', str(user_id))
+        user = await rotur.get_user_by('discord_id', str(user_id))
         if user.get('error') == "User not found" or user is None:
             return False, "User not linked to rotur"
         
@@ -287,7 +285,7 @@ async def award_daily_credit(user_id, credit_amount):
         except:
             pass
         
-        result = rotur.transfer_credits("rotur", username, credit_amount, "daily credit")
+        result = await rotur.transfer_credits("rotur", username, credit_amount, "daily credit")
 
         print(f"Update result for {username}: {result}")
         
@@ -506,10 +504,10 @@ def _chunk_lines(lines: list[str], chunk_size: int = 20) -> list[str]:
     return ["\n".join(lines[i:i + chunk_size]) for i in range(0, len(lines), chunk_size)]
 
 
-def _get_linked_token(discord_user_id: int) -> str | None:
+async def _get_linked_token(discord_user_id: int) -> str | None:
     """Return the user's rotur auth token if they're linked, else None."""
     try:
-        user = rotur.get_user_by('discord_id', str(discord_user_id))
+        user = await rotur.get_user_by('discord_id', str(discord_user_id))
     except Exception:
         return None
     if user is None or user.get('error') == 'User not found':
@@ -608,68 +606,70 @@ async def purge(ctx: discord.Interaction, number: int):
 @friends.command(name='add', description='Send a friend request to a user')
 @app_commands.describe(username='The username to send a friend request to')
 async def friends_add(ctx: discord.Interaction, username: str):
-    token = _get_linked_token(ctx.user.id)
+    token = await _get_linked_token(ctx.user.id)
     if not token:
         await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
         return
 
     try:
-        resp = requests.post(f"{server}/friends/request/{username}?auth={token}", timeout=10)
+        status, payload = await rotur.friends_request(token, username)
     except Exception as e:
         await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
         return
 
-    payload = _safe_json(resp)
-    if resp.status_code != 200 or payload.get('error'):
-        await send_message(ctx.response, payload.get('error', f"Failed to send request (status {resp.status_code})."), ephemeral=True)
+    if status != 200 or (isinstance(payload, dict) and payload.get('error')):
+        err = payload.get('error') if isinstance(payload, dict) else None
+        await send_message(ctx.response, err or f"Failed to send request (status {status}).", ephemeral=True)
         return
 
-    await send_message(ctx.response, payload.get('message', f"Friend request sent to {username}."))
+    msg = payload.get('message') if isinstance(payload, dict) else None
+    await send_message(ctx.response, msg or f"Friend request sent to {username}.")
 
 
 @allowed_everywhere
 @friends.command(name='remove', description='Remove a friend')
 @app_commands.describe(username='The username to remove from your friends list')
 async def friends_remove(ctx: discord.Interaction, username: str):
-    token = _get_linked_token(ctx.user.id)
+    token = await _get_linked_token(ctx.user.id)
     if not token:
         await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
         return
 
     try:
-        resp = requests.post(f"{server}/friends/remove/{username}?auth={token}", timeout=10)
+        status, payload = await rotur.friends_remove(token, username)
     except Exception as e:
         await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
         return
 
-    payload = _safe_json(resp)
-    if resp.status_code != 200 or payload.get('error'):
-        await send_message(ctx.response, payload.get('error', f"Failed to remove friend (status {resp.status_code})."), ephemeral=True)
+    if status != 200 or (isinstance(payload, dict) and payload.get('error')):
+        err = payload.get('error') if isinstance(payload, dict) else None
+        await send_message(ctx.response, err or f"Failed to remove friend (status {status}).", ephemeral=True)
         return
 
-    await send_message(ctx.response, payload.get('message', f"Removed {username} from your friends."))
+    msg = payload.get('message') if isinstance(payload, dict) else None
+    await send_message(ctx.response, msg or f"Removed {username} from your friends.")
 
 
 @allowed_everywhere
 @friends.command(name='list', description='List your friends')
 async def friends_list(ctx: discord.Interaction):
-    token = _get_linked_token(ctx.user.id)
+    token = await _get_linked_token(ctx.user.id)
     if not token:
         await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
         return
 
     try:
-        resp = requests.get(f"{server}/friends?auth={token}", timeout=10)
+        status, payload = await rotur.friends_list(token)
     except Exception as e:
         await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
         return
 
-    payload = _safe_json(resp)
-    if resp.status_code != 200 or payload.get('error'):
-        await send_message(ctx.response, payload.get('error', f"Failed to fetch friends (status {resp.status_code})."), ephemeral=True)
+    if status != 200 or (isinstance(payload, dict) and payload.get('error')):
+        err = payload.get('error') if isinstance(payload, dict) else None
+        await send_message(ctx.response, err or f"Failed to fetch friends (status {status}).", ephemeral=True)
         return
 
-    friends_list = payload.get('friends', [])
+    friends_list = payload.get('friends', []) if isinstance(payload, dict) else []
     if not friends_list:
         await send_message(ctx.response, "You don't have any friends yet.")
         return
@@ -689,14 +689,14 @@ async def friends_list(ctx: discord.Interaction):
 @allowed_everywhere
 @requests_group.command(name='list', description='List your incoming friend requests')
 async def requests_list(ctx: discord.Interaction):
-    token = _get_linked_token(ctx.user.id)
+    token = await _get_linked_token(ctx.user.id)
     if not token:
         await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
         return
 
     # There is no dedicated /friends/requests endpoint. Requests are stored on the user object.
     try:
-        me = rotur.get_user_by('discord_id', str(ctx.user.id))
+        me = await rotur.get_user_by('discord_id', str(ctx.user.id))
     except Exception as e:
         await send_message(ctx.response, f"Error reading your profile: {str(e)}", ephemeral=True)
         return
@@ -726,58 +726,60 @@ async def requests_list(ctx: discord.Interaction):
 @requests_group.command(name='accept', description='Accept a friend request from a user')
 @app_commands.describe(username='The username whose request you want to accept')
 async def requests_accept(ctx: discord.Interaction, username: str):
-    token = _get_linked_token(ctx.user.id)
+    token = await _get_linked_token(ctx.user.id)
     if not token:
         await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
         return
 
     try:
-        resp = requests.post(f"{server}/friends/accept/{username}?auth={token}", timeout=10)
+        status, payload = await rotur.friends_accept(token, username)
     except Exception as e:
         await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
         return
 
-    payload = _safe_json(resp)
-    if resp.status_code != 200 or payload.get('error'):
-        await send_message(ctx.response, payload.get('error', f"Failed to accept request (status {resp.status_code})."), ephemeral=True)
+    if status != 200 or (isinstance(payload, dict) and payload.get('error')):
+        err = payload.get('error') if isinstance(payload, dict) else None
+        await send_message(ctx.response, err or f"Failed to accept request (status {status}).", ephemeral=True)
         return
 
-    await send_message(ctx.response, payload.get('message', f"Accepted friend request from {username}."))
+    msg = payload.get('message') if isinstance(payload, dict) else None
+    await send_message(ctx.response, msg or f"Accepted friend request from {username}.")
 
 
 @allowed_everywhere
 @requests_group.command(name='reject', description='Reject a friend request from a user')
 @app_commands.describe(username='The username whose request you want to reject')
 async def requests_reject(ctx: discord.Interaction, username: str):
-    token = _get_linked_token(ctx.user.id)
+    token = await _get_linked_token(ctx.user.id)
     if not token:
         await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
         return
 
     try:
-        resp = requests.post(f"{server}/friends/reject/{username}?auth={token}", timeout=10)
+        status, payload = await rotur.friends_reject(token, username)
     except Exception as e:
         await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
         return
 
-    payload = _safe_json(resp)
-    if resp.status_code != 200 or payload.get('error'):
-        await send_message(ctx.response, payload.get('error', f"Failed to reject request (status {resp.status_code})."), ephemeral=True)
+    if status != 200 or (isinstance(payload, dict) and payload.get('error')):
+        err = payload.get('error') if isinstance(payload, dict) else None
+        await send_message(ctx.response, err or f"Failed to reject request (status {status}).", ephemeral=True)
         return
 
-    await send_message(ctx.response, payload.get('message', f"Rejected friend request from {username}."))
+    msg = payload.get('message') if isinstance(payload, dict) else None
+    await send_message(ctx.response, msg or f"Rejected friend request from {username}.")
 
 
 @allowed_everywhere
 @requests_group.command(name='accept_all', description='Accept all pending friend requests')
 async def requests_accept_all(ctx: discord.Interaction):
-    token = _get_linked_token(ctx.user.id)
+    token = await _get_linked_token(ctx.user.id)
     if not token:
         await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
         return
 
     try:
-        me = rotur.get_user_by('discord_id', str(ctx.user.id))
+        me = await rotur.get_user_by('discord_id', str(ctx.user.id))
     except Exception as e:
         await send_message(ctx.response, f"Error reading your profile: {str(e)}", ephemeral=True)
         return
@@ -791,12 +793,12 @@ async def requests_accept_all(ctx: discord.Interaction):
     failed = []
     for username in reqs:
         try:
-            resp = requests.post(f"{server}/friends/accept/{username}?auth={token}", timeout=10)
-            payload = _safe_json(resp)
-            if resp.status_code == 200 and not payload.get('error'):
+            status, payload = await rotur.friends_accept(token, username)
+            if status == 200 and not (isinstance(payload, dict) and payload.get('error')):
                 accepted.append(username)
             else:
-                failed.append(f"{username} ({payload.get('error', 'failed')})")
+                err = payload.get('error') if isinstance(payload, dict) else 'failed'
+                failed.append(f"{username} ({err or 'failed'})")
         except Exception as e:
             failed.append(f"{username} ({str(e)})")
 
@@ -816,13 +818,13 @@ async def requests_accept_all(ctx: discord.Interaction):
 @allowed_everywhere
 @requests_group.command(name='reject_all', description='Reject all pending friend requests')
 async def requests_reject_all(ctx: discord.Interaction):
-    token = _get_linked_token(ctx.user.id)
+    token = await _get_linked_token(ctx.user.id)
     if not token:
         await send_message(ctx.response, "You aren't linked to rotur (or no auth token found).", ephemeral=True)
         return
 
     try:
-        me = rotur.get_user_by('discord_id', str(ctx.user.id))
+        me = await rotur.get_user_by('discord_id', str(ctx.user.id))
     except Exception as e:
         await send_message(ctx.response, f"Error reading your profile: {str(e)}", ephemeral=True)
         return
@@ -836,12 +838,12 @@ async def requests_reject_all(ctx: discord.Interaction):
     failed = []
     for username in reqs:
         try:
-            resp = requests.post(f"{server}/friends/reject/{username}?auth={token}", timeout=10)
-            payload = _safe_json(resp)
-            if resp.status_code == 200 and not payload.get('error'):
+            status, payload = await rotur.friends_reject(token, username)
+            if status == 200 and not (isinstance(payload, dict) and payload.get('error')):
                 rejected.append(username)
             else:
-                failed.append(f"{username} ({payload.get('error', 'failed')})")
+                err = payload.get('error') if isinstance(payload, dict) else 'failed'
+                failed.append(f"{username} ({err or 'failed'})")
         except Exception as e:
             failed.append(f"{username} ({str(e)})")
 
@@ -896,10 +898,8 @@ async def create_embeds_from_user(user, use_emoji_badges=True):
 @tree.command(name='me', description='View your rotur profile')
 async def me(ctx: discord.Interaction):
     await ctx.response.defer()
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{server}/profile?include_posts=0&discord_id={ctx.user.id}") as resp:
-            user = await resp.json()
+
+    _, user = await rotur.profile_by_discord_id(ctx.user.id)
     
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.followup, 'You are not linked to a rotur account. Please link your account using `/link` command.')
@@ -914,10 +914,8 @@ async def me(ctx: discord.Interaction):
 @app_commands.describe(username='The username of the user to view')
 async def user(ctx: discord.Interaction, username: str):
     await ctx.response.defer()
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{server}/profile?include_posts=0&name={username}") as resp:
-            user = await resp.json()
+
+    _, user = await rotur.profile_by_name(username)
     
     if user is None:
         await send_message(ctx.followup, 'User not found.')
@@ -1100,7 +1098,7 @@ async def online(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='totalusers', description='Display the total number of rotur users')
 async def totalusers(ctx: discord.Interaction):
-    users = requests.get(f"{server}/stats/users").json()
+    _, users = await rotur.stats_users()
     if not isinstance(users, dict) or 'total_users' not in users:
         await send_message(ctx.response, "Error fetching user statistics.")
         return
@@ -1110,7 +1108,7 @@ async def totalusers(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='usage', description='Check your file system usage')
 async def usage(ctx: discord.Interaction):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1128,7 +1126,7 @@ async def usage(ctx: discord.Interaction):
 @app_commands.describe(new_password='Your new password (will be hashed client-side)')
 async def changepass(ctx: discord.Interaction, new_password: str):
     # Require a linked account
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1142,27 +1140,19 @@ async def changepass(ctx: discord.Interaction, new_password: str):
     hashed = hashlib.md5(new_password.encode()).hexdigest()
 
     try:
-        resp = requests.patch(
-            f"{server}/users",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"key": "password", "value": hashed, "auth": token})
-        )
-        if resp.status_code == 200:
+        status, payload = await rotur.users_patch(token, "password", hashed)
+        if status == 200:
             await send_message(ctx.response, "Your rotur password has been changed.", ephemeral=True)
         else:
-            # Surface server error if present
-            try:
-                err = resp.json().get('error')
-            except Exception:
-                err = None
-            await send_message(ctx.response, err or f"Failed to change password. Server responded with status {resp.status_code}.", ephemeral=True)
+            err = payload.get('error') if isinstance(payload, dict) else None
+            await send_message(ctx.response, err or f"Failed to change password. Server responded with status {status}.", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error changing password: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='most_followed', description='See the leaderboard of the most followed users')
 async def most_followed(ctx: discord.Interaction):
-    users = requests.get(f"{server}/stats/followers").json()
+    _, users = await rotur.stats_followers()
     if users is None:
         await send_message(ctx.response, "Error: Unable to retrieve user data.")
         return
@@ -1177,7 +1167,7 @@ async def most_followed(ctx: discord.Interaction):
 @tree.command(name='follow', description='Follow a user on rotur')
 @app_commands.describe(username='The username of the user to follow')
 async def follow(ctx: discord.Interaction, username: str):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1188,12 +1178,11 @@ async def follow(ctx: discord.Interaction, username: str):
         return
 
     try:
-        resp = requests.get(f"{server}/follow?auth={token}&name={username}")
-        if resp.status_code == 200:
+        status, result = await rotur.follow_user(token, username)
+        if status == 200:
             await send_message(ctx.response, f"You are now following {username}.")
         else:
-            result = resp.json()
-            error_msg = result.get('error', f'Failed to follow user. Server responded with status {resp.status_code}.')
+            error_msg = result.get('error', f'Failed to follow user. Server responded with status {status}.') if isinstance(result, dict) else f'Failed to follow user. Server responded with status {status}.'
             await send_message(ctx.response, error_msg, ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error following user: {str(e)}", ephemeral=True)
@@ -1202,7 +1191,7 @@ async def follow(ctx: discord.Interaction, username: str):
 @tree.command(name='unfollow', description='Unfollow a user on rotur')
 @app_commands.describe(username='The username of the user to unfollow')
 async def unfollow(ctx: discord.Interaction, username: str):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1213,12 +1202,11 @@ async def unfollow(ctx: discord.Interaction, username: str):
         return
 
     try:
-        resp = requests.get(f"{server}/unfollow?auth={token}&name={username}")
-        if resp.status_code == 200:
+        status, result = await rotur.unfollow_user(token, username)
+        if status == 200:
             await send_message(ctx.response, f"You are no longer following {username}.")
         else:
-            result = resp.json()
-            error_msg = result.get('error', f'Failed to unfollow user. Server responded with status {resp.status_code}.')
+            error_msg = result.get('error', f'Failed to unfollow user. Server responded with status {status}.') if isinstance(result, dict) else f'Failed to unfollow user. Server responded with status {status}.'
             await send_message(ctx.response, error_msg, ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error unfollowing user: {str(e)}", ephemeral=True)
@@ -1226,15 +1214,14 @@ async def unfollow(ctx: discord.Interaction, username: str):
 @allowed_everywhere
 @tree.command(name='following', description='View users you are following')
 async def following_list(ctx: discord.Interaction):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
 
     try:
-        resp = requests.get(f"{server}/following?name={user['username']}")
-        if resp.status_code == 200:
-            user_data = resp.json()
+        status, user_data = await rotur.following(user['username'])
+        if status == 200 and isinstance(user_data, dict):
             following_list = user_data.get('following', [])
             
             if not following_list:
@@ -1251,7 +1238,7 @@ async def following_list(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='subscribe', description='Subscribe to Lite (15 credits per month)')
 async def subscribe(ctx: discord.Interaction):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1263,18 +1250,19 @@ async def subscribe(ctx: discord.Interaction):
         await send_message(ctx.response, "You already have an active subscription.", ephemeral=True)
         return
     try:
-        resp = requests.get(f"{server}/keys/buy/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
-        if resp.status_code == 200:
+        status, payload = await rotur.keys_buy("4f229157f0c40f5a98cbf28efd39cfe8", token)
+        if status == 200:
             await send_message(ctx.response, "You have successfully subscribed to Lite.")
         else:
-            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}")
+            err = payload.get('error', 'Unknown error occurred') if isinstance(payload, dict) else 'Unknown error occurred'
+            await send_message(ctx.response, f"{err}")
     except Exception as e:
         await send_message(ctx.response, f"Error subscribing to Lite: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @tree.command(name='unsubscribe', description='Unsubscribe from Lite')
 async def unsubscribe(ctx: discord.Interaction):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1286,11 +1274,12 @@ async def unsubscribe(ctx: discord.Interaction):
         await send_message(ctx.response, "You are not subscribed to Lite.", ephemeral=True)
         return
     try:
-        resp = requests.delete(f"{server}/keys/cancel/4f229157f0c40f5a98cbf28efd39cfe8?auth=" + token)
-        if resp.status_code == 200:
+        status, payload = await rotur.keys_cancel("4f229157f0c40f5a98cbf28efd39cfe8", token)
+        if status == 200:
             await send_message(ctx.response, "You have successfully unsubscribed from Lite.")
         else:
-            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}")
+            err = payload.get('error', 'Unknown error occurred') if isinstance(payload, dict) else 'Unknown error occurred'
+            await send_message(ctx.response, f"{err}")
     except Exception as e:
         await send_message(ctx.response, f"Error unsubscribing from Lite: {str(e)}", ephemeral=True)
 
@@ -1302,7 +1291,7 @@ tree.add_command(marriage)
 
 @tree.command(name='blocked', description='View users you are blocking')
 async def blocked(ctx: discord.Interaction):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1317,7 +1306,7 @@ async def blocked(ctx: discord.Interaction):
 @tree.command(name='block', description='Block a user on rotur')
 @app_commands.describe(username='The username of the user to block')
 async def block(ctx: discord.Interaction, username: str):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1326,7 +1315,7 @@ async def block(ctx: discord.Interaction, username: str):
         await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     try:
-        await send_message(ctx.response, rotur.block_user(token, username))
+        await send_message(ctx.response, await rotur.block_user(token, username))
     except Exception as e:
         await send_message(ctx.response, f"Error blocking user: {str(e)}", ephemeral=True)
 
@@ -1334,7 +1323,7 @@ async def block(ctx: discord.Interaction, username: str):
 @tree.command(name='unblock', description='Unblock a user on rotur')
 @app_commands.describe(username='The username of the user to unblock')
 async def unblock(ctx: discord.Interaction, username: str):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1343,7 +1332,7 @@ async def unblock(ctx: discord.Interaction, username: str):
         await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     try:
-        await send_message(ctx.response, rotur.unblock_user(token, username))
+        await send_message(ctx.response, await rotur.unblock_user(token, username))
     except Exception as e:
         await send_message(ctx.response, f"Error unblocking user: {str(e)}", ephemeral=True)
 
@@ -1352,7 +1341,7 @@ async def unblock(ctx: discord.Interaction, username: str):
 @app_commands.describe(username='Username of the person you want to propose to')
 async def marriage_propose(ctx: discord.Interaction, username: str):
     # Get user's rotur account
-    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -1363,7 +1352,7 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
         return
     
     # Get target user's rotur account to find their Discord ID
-    target_user_data = rotur.get_user_by('username', username)
+    target_user_data = await rotur.get_user_by('username', username)
     if target_user_data is None or target_user_data.get('error') == "User not found":
         await send_message(ctx.response, f'User **{username}** not found on rotur.', ephemeral=True)
         return
@@ -1375,10 +1364,9 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
     
     try:
         # Send proposal request
-        response = requests.post(f"{server}/marriage/propose/{username}?auth={auth_key}", timeout=10)
-        result = response.json()
-        
-        if response.status_code == 200:
+        status, result = await rotur.marriage_propose(auth_key, username)
+
+        if status == 200:
             # Create buttons for accept/reject that only the target user can use
             view = ProposalView(target_discord_id, user_data.get('username'), username)
             
@@ -1396,7 +1384,8 @@ async def marriage_propose(ctx: discord.Interaction, username: str):
             
             await send_message(ctx.response, embed=embed, view=view)
         else:
-            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
+            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error sending proposal: {str(e)}", ephemeral=True)
 
@@ -1417,7 +1406,7 @@ class ProposalView(discord.ui.View):
     @discord.ui.button(label='Accept 💕', style=discord.ButtonStyle.green)
     async def accept_proposal(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Get user's auth key
-        user_data = rotur.get_user_by('discord_id', str(interaction.user.id))
+        user_data = await rotur.get_user_by('discord_id', str(interaction.user.id))
         if user_data is None or user_data.get('error') == "User not found":
             await interaction.response.send_message('You are not linked to a rotur account.', ephemeral=True)
             return
@@ -1428,10 +1417,9 @@ class ProposalView(discord.ui.View):
             return
         
         try:
-            response = requests.post(f"{server}/marriage/accept?auth={auth_key}", timeout=10)
-            result = response.json()
-            
-            if response.status_code == 200:
+            status, result = await rotur.marriage_accept(auth_key)
+
+            if status == 200:
                 embed = discord.Embed(
                     title="💕 Marriage Accepted!",
                     description=f"Congratulations! You and **{self.proposer_username}** are now married!",
@@ -1441,7 +1429,7 @@ class ProposalView(discord.ui.View):
                 
                 # Try to notify the proposer
                 try:
-                    proposer_data = rotur.get_user_by('username', self.proposer_username)
+                    proposer_data = await rotur.get_user_by('username', self.proposer_username)
                     if proposer_data and proposer_data.get('discord_id'):
                         proposer_user = await client.fetch_user(int(proposer_data.get('discord_id')))
                         if proposer_user:
@@ -1454,14 +1442,15 @@ class ProposalView(discord.ui.View):
                 except:
                     pass  # Ignore if we can't notify
             else:
-                await interaction.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+                err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
+                await interaction.response.send_message(f"Error: {err}", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"Error accepting proposal: {str(e)}", ephemeral=True)
     
     @discord.ui.button(label='Reject 💔', style=discord.ButtonStyle.red)
     async def reject_proposal(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Get user's auth key
-        user_data = rotur.get_user_by('discord_id', str(interaction.user.id))
+        user_data = await rotur.get_user_by('discord_id', str(interaction.user.id))
         if user_data is None or user_data.get('error') == "User not found":
             await interaction.response.send_message('You are not linked to a rotur account.', ephemeral=True)
             return
@@ -1472,10 +1461,9 @@ class ProposalView(discord.ui.View):
             return
         
         try:
-            response = requests.post(f"{server}/marriage/reject?auth={auth_key}", timeout=10)
-            result = response.json()
-            
-            if response.status_code == 200:
+            status, result = await rotur.marriage_reject(auth_key)
+
+            if status == 200:
                 embed = discord.Embed(
                     title="💔 Marriage Proposal Rejected",
                     description=f"You have rejected **{self.proposer_username}**'s marriage proposal.",
@@ -1485,7 +1473,7 @@ class ProposalView(discord.ui.View):
                 
                 # Try to notify the proposer
                 try:
-                    proposer_data = rotur.get_user_by('username', self.proposer_username)
+                    proposer_data = await rotur.get_user_by('username', self.proposer_username)
                     if proposer_data and proposer_data.get('discord_id'):
                         proposer_user = await client.fetch_user(int(proposer_data.get('discord_id')))
                         if proposer_user:
@@ -1498,7 +1486,8 @@ class ProposalView(discord.ui.View):
                 except:
                     pass  # Ignore if we can't notify
             else:
-                await interaction.response.send_message(f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+                err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
+                await interaction.response.send_message(f"Error: {err}", ephemeral=True)
         except Exception as e:
             await interaction.response.send_message(f"Error rejecting proposal: {str(e)}", ephemeral=True)
     
@@ -1515,7 +1504,7 @@ class ProposalView(discord.ui.View):
 @marriage.command(name='accept', description='Accept your pending marriage proposal')
 async def marriage_accept(ctx: discord.Interaction):
     # Get user's rotur account
-    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -1527,10 +1516,9 @@ async def marriage_accept(ctx: discord.Interaction):
     
     try:
         # Accept proposal
-        response = requests.post(f"{server}/marriage/accept?auth={auth_key}", timeout=10)
-        result = response.json()
-        
-        if response.status_code == 200:
+        status, result = await rotur.marriage_accept(auth_key)
+
+        if status == 200:
             embed = discord.Embed(
                 title="💕 Marriage Accepted!",
                 description=f"Congratulations! You and **{result.get('partner')}** are now married!",
@@ -1538,7 +1526,8 @@ async def marriage_accept(ctx: discord.Interaction):
             )
             await ctx.response.edit_message(embed=embed, view=None)
         else:
-            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
+            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error accepting proposal: {str(e)}", ephemeral=True)
 
@@ -1546,7 +1535,7 @@ async def marriage_accept(ctx: discord.Interaction):
 @marriage.command(name='reject', description='Reject your pending marriage proposal')
 async def marriage_reject(ctx: discord.Interaction):
     # Get user's rotur account
-    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -1558,10 +1547,9 @@ async def marriage_reject(ctx: discord.Interaction):
     
     try:
         # Reject proposal
-        response = requests.post(f"{server}/marriage/reject?auth={auth_key}", timeout=10)
-        result = response.json()
-        
-        if response.status_code == 200:
+        status, result = await rotur.marriage_reject(auth_key)
+
+        if status == 200:
             embed = discord.Embed(
                 title="💔 Marriage Proposal Rejected",
                 description=f"You have rejected **{result.get('proposer')}**'s marriage proposal.",
@@ -1569,7 +1557,8 @@ async def marriage_reject(ctx: discord.Interaction):
             )
             await ctx.response.edit_message(embed=embed, view=None)
         else:
-            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
+            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error rejecting proposal: {str(e)}", ephemeral=True)
 
@@ -1577,7 +1566,7 @@ async def marriage_reject(ctx: discord.Interaction):
 @marriage.command(name='cancel', description='Cancel your pending marriage proposal')
 async def marriage_cancel(ctx: discord.Interaction):
     # Get user's rotur account
-    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -1589,10 +1578,9 @@ async def marriage_cancel(ctx: discord.Interaction):
     
     try:
         # Cancel proposal
-        response = requests.post(f"{server}/marriage/cancel?auth={auth_key}", timeout=10)
-        result = response.json()
-        
-        if response.status_code == 200:
+        status, result = await rotur.marriage_cancel(auth_key)
+
+        if status == 200:
             embed = discord.Embed(
                 title="Proposal Cancelled",
                 description="You have cancelled your marriage proposal.",
@@ -1600,7 +1588,8 @@ async def marriage_cancel(ctx: discord.Interaction):
             )
             await send_message(ctx.response, embed=embed)
         else:
-            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
+            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error cancelling proposal: {str(e)}", ephemeral=True)
 
@@ -1608,7 +1597,7 @@ async def marriage_cancel(ctx: discord.Interaction):
 @marriage.command(name='divorce', description='Divorce your current spouse')
 async def marriage_divorce(ctx: discord.Interaction):
     # Get user's rotur account
-    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -1620,10 +1609,9 @@ async def marriage_divorce(ctx: discord.Interaction):
     
     try:
         # Divorce request
-        response = requests.post(f"{server}/marriage/divorce?auth={auth_key}", timeout=10)
-        result = response.json()
-        
-        if response.status_code == 200:
+        status, result = await rotur.marriage_divorce(auth_key)
+
+        if status == 200:
             embed = discord.Embed(
                 title="💔 Divorce Processed",
                 description="You are now divorced.",
@@ -1631,7 +1619,8 @@ async def marriage_divorce(ctx: discord.Interaction):
             )
             await send_message(ctx.response, embed=embed)
         else:
-            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
+            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error processing divorce: {str(e)}", ephemeral=True)
 
@@ -1639,7 +1628,7 @@ async def marriage_divorce(ctx: discord.Interaction):
 @marriage.command(name='status', description='Check your marriage status')
 async def marriage_status(ctx: discord.Interaction):
     # Get user's rotur account
-    user_data = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user_data is None or user_data.get('error') == "User not found":
         await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
         return
@@ -1651,10 +1640,9 @@ async def marriage_status(ctx: discord.Interaction):
     
     try:
         # Get marriage status
-        response = requests.get(f"{server}/marriage/status?auth={auth_key}", timeout=10)
-        result = response.json()
-        
-        if response.status_code == 200:
+        status, result = await rotur.marriage_status(auth_key)
+
+        if status == 200 and isinstance(result, dict):
             status = result.get('status', 'single')
             partner = result.get('partner', '')
             
@@ -1693,7 +1681,8 @@ async def marriage_status(ctx: discord.Interaction):
             
             await send_message(ctx.response, embed=embed)
         else:
-            await send_message(ctx.response, f"Error: {result.get('error', 'Unknown error')}", ephemeral=True)
+            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
+            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error checking marriage status: {str(e)}", ephemeral=True)
 
@@ -1717,26 +1706,23 @@ async def here(ctx: discord.Interaction):
 @tree.command(name='link', description='[EPHEMERAL] Link your Discord account to your rotur account')
 @app_commands.describe(username='Your rotur username', password='Your rotur password')
 async def link(ctx: discord.Interaction, username: str, password: str):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user and user.get('error') != "User not found":
         await send_message(ctx.response, "You are already linked to a rotur account.", ephemeral=True)
         return
     hashed_password = hashlib.md5(password.encode()).hexdigest()
-    user = requests.get(f"{server}/get_user?username={username}&password={hashed_password}").json()
-    token = user.get("key")
+    _, user = await rotur.get_user_login(username, hashed_password)
+    token = user.get("key") if isinstance(user, dict) else None
     if not token:
-        await send_message(ctx.response, user.get('error', 'Unknown error occurred.'), ephemeral=True)
+        err = user.get('error', 'Unknown error occurred.') if isinstance(user, dict) else 'Unknown error occurred.'
+        await send_message(ctx.response, err, ephemeral=True)
         return
     try:
-        resp = requests.patch(
-            f"{server}/users",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"key": "discord_id", "value": str(ctx.user.id), "auth": token})
-        )
-        if resp.status_code == 200:
+        status, _payload = await rotur.users_patch(token, "discord_id", str(ctx.user.id))
+        if status == 200:
             await send_message(ctx.response, "Your Discord account has been linked to your rotur account.", ephemeral=True)
         else:
-            await send_message(ctx.response, f"Failed to link account. Server responded with status {resp.status_code}.", ephemeral=True)
+            await send_message(ctx.response, f"Failed to link account. Server responded with status {status}.", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error linking account: {str(e)}", ephemeral=True)
     return
@@ -1770,7 +1756,7 @@ async def icon(ctx: discord.Interaction, icon: str, size: float):
 @allowed_everywhere
 @tree.command(name='unlink', description='[EPHEMERAL] Unlink your Discord account from your rotur account')
 async def unlink(ctx: discord.Interaction):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user.get('error') == "User not found" or user is None:
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1779,15 +1765,11 @@ async def unlink(ctx: discord.Interaction):
         await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     try:
-        resp = requests.patch(
-            f"{server}/users",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"key": "discord_id", "value": "", "auth": token})
-        )
-        if resp.status_code == 200:
+        status, _payload = await rotur.users_patch(token, "discord_id", "")
+        if status == 200:
             await send_message(ctx.response, "Your Discord account has been unlinked from your rotur account.", ephemeral=True)
         else:
-            await send_message(ctx.response, f"Failed to unlink account. Server responded with status {resp.status_code}.", ephemeral=True)
+            await send_message(ctx.response, f"Failed to unlink account. Server responded with status {status}.", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error unlinking account: {str(e)}", ephemeral=True)
     return
@@ -1800,7 +1782,7 @@ async def refresh_token_cmd(ctx: discord.Interaction):
     Returns an ephemeral confirmation and (for convenience) the first / last characters
     of the new token so the user can verify rotation without fully exposing it in logs.
     """
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == 'User not found':
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1811,24 +1793,18 @@ async def refresh_token_cmd(ctx: discord.Interaction):
         return
 
     try:
-        resp = requests.post(f"{server}/me/refresh_token?auth={old_token}")
+        status, payload = await rotur.refresh_token(old_token)
     except Exception as e:
         await send_message(ctx.response, f"Error contacting server: {str(e)}", ephemeral=True)
         return
 
-    status = resp.status_code
-    try:
-        payload = resp.json()
-    except Exception:
-        payload = {"error": f"Non-JSON response (status {status})"}
-
-    if status != 200 or payload.get('error'):
-        err = payload.get('error', f'Server responded with status {status}.')
+    if status != 200 or (isinstance(payload, dict) and payload.get('error')):
+        err = payload.get('error', f'Server responded with status {status}.') if isinstance(payload, dict) else f'Server responded with status {status}.'
         await send_message(ctx.response, f"Failed to refresh token: {err}", ephemeral=True)
         return
 
     try:
-        updated = rotur.get_user_by('discord_id', str(ctx.user.id))
+        updated = await rotur.get_user_by('discord_id', str(ctx.user.id))
     except Exception:
         updated = None
 
@@ -1867,7 +1843,7 @@ async def syncpfp(ctx: discord.Interaction):
     except Exception:
         pass
 
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.followup, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1901,7 +1877,7 @@ async def syncpfp(ctx: discord.Interaction):
                         f"Failed to sync profile picture. Server responded with status {resp.status}, message: {await resp.text()}",
                         ephemeral=True,
                     )
-            rotur.update_user("update", user.get("username"), "pfp", f"{user.get('username')}?nocache={randomString(5)}")
+            await rotur.update_user("update", user.get("username"), "pfp", f"{user.get('username')}?nocache={randomString(5)}")
     except Exception as e:
         # Use followup since we've already deferred
         await send_message(ctx.followup, f"Error syncing profile picture: {str(e)}", ephemeral=True)
@@ -1916,7 +1892,7 @@ async def gamble(ctx: discord.Interaction, amount: float):
 @allowed_everywhere
 @tree.command(name='allkeys', description='Get a list of all the keys in your account')
 async def all_keys(ctx: discord.Interaction):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1939,7 +1915,7 @@ async def all_keys(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='created', description='Get the creation date of your account')
 async def created(ctx: discord.Interaction):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1959,7 +1935,7 @@ async def created(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='balance', description='Check your current credit balance')
 async def balance(ctx: discord.Interaction):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1973,7 +1949,7 @@ async def balance(ctx: discord.Interaction):
 @allowed_everywhere
 @transfer.command(name='rotur', description='Transfer credits to another user')
 async def transfer_credits(ctx: discord.Interaction, username: str, amount: float, note: str = ""):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -1984,26 +1960,23 @@ async def transfer_credits(ctx: discord.Interaction, username: str, amount: floa
         return
 
     try:
-        resp = requests.post(
-            f"{server}/me/transfer?auth=" + token,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"to": username, "amount": amount, "note": note})
-        )
-        if resp.status_code == 200:
+        status, payload = await rotur.transfer(token, username, amount, note)
+        if status == 200:
             await send_message(ctx.response, f"Successfully transferred {amount} credits to {username}." + (f"\nNote: {note}" if note else ""))
         else:
-            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+            err = payload.get('error', 'Unknown error occurred') if isinstance(payload, dict) else 'Unknown error occurred'
+            await send_message(ctx.response, f"{err}", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error transferring credits: {str(e)}", ephemeral=True)
 
 @allowed_everywhere
 @transfer.command(name='discord', description='Transfer credits to a Discord user')
 async def transfer_discord(ctx: discord.Interaction, discord_user: discord.User, amount: float, note: str = ""):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
-    to_user = rotur.get_user_by('discord_id', str(discord_user.id))
+    to_user = await rotur.get_user_by('discord_id', str(discord_user.id))
     if to_user is None or to_user.get('error') == "User not found":
         await send_message(ctx.response, "Recipient user is not linked to rotur.", ephemeral=True)
         return
@@ -2014,15 +1987,12 @@ async def transfer_discord(ctx: discord.Interaction, discord_user: discord.User,
         return
 
     try:
-        resp = requests.post(
-            f"{server}/me/transfer?auth=" + token,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"to": to_user["username"], "amount": amount, "note": note})
-        )
-        if resp.status_code == 200:
-            await send_message(ctx.response, f"Successfully transferred {amount} credits to {to_user["username"]}." + (f"\nNote: {note}" if note else ""))
+        status, payload = await rotur.transfer(token, to_user["username"], amount, note)
+        if status == 200:
+            await send_message(ctx.response, f"Successfully transferred {amount} credits to {to_user['username']}." + (f"\nNote: {note}" if note else ""))
         else:
-            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+            err = payload.get('error', 'Unknown error occurred') if isinstance(payload, dict) else 'Unknown error occurred'
+            await send_message(ctx.response, f"{err}", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error transferring credits: {str(e)}")
 
@@ -2030,7 +2000,7 @@ async def transfer_discord(ctx: discord.Interaction, discord_user: discord.User,
 @keys.command(name='set', description='Set a key in your account')
 @app_commands.describe(key='The key to set', value='The value of the key')
 async def set_key(ctx: discord.Interaction, key: str, value: str):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -2041,15 +2011,12 @@ async def set_key(ctx: discord.Interaction, key: str, value: str):
         return
 
     try:
-        resp = requests.patch(
-            f"{server}/users",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"key": key, "value": value, "auth": token})
-        )
-        if resp.status_code == 200:
+        status, payload = await rotur.users_patch(token, key, value)
+        if status == 200:
             await send_message(ctx.response, f"Key '{key}' set to '{value}'.")
         else:
-            await send_message(ctx.response, f"{resp.json().get('error', 'Unknown error occurred')}", ephemeral=True)
+            err = payload.get('error', 'Unknown error occurred') if isinstance(payload, dict) else 'Unknown error occurred'
+            await send_message(ctx.response, f"{err}", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error setting key: {str(e)}", ephemeral=True)
 
@@ -2057,7 +2024,7 @@ async def set_key(ctx: discord.Interaction, key: str, value: str):
 @keys.command(name='del', description='Delete a key from your account')
 @app_commands.describe(key='The key to delete')
 async def del_key(ctx: discord.Interaction, key: str):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -2068,15 +2035,11 @@ async def del_key(ctx: discord.Interaction, key: str):
         return
 
     try:
-        resp = requests.delete(
-            f"{server}/users",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"key": key, "auth": token})
-        )
-        if resp.status_code == 204:
+        status, _payload = await rotur.users_delete(token, key)
+        if status == 204:
             await send_message(ctx.response, f"Key '{key}' deleted successfully.")
         else:
-            await send_message(ctx.response, f"Failed to delete key '{key}'. Server responded with status {resp.status_code}.", ephemeral=True)
+            await send_message(ctx.response, f"Failed to delete key '{key}'. Server responded with status {status}.", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error deleting key: {str(e)}", ephemeral=True)
 
@@ -2084,7 +2047,7 @@ async def del_key(ctx: discord.Interaction, key: str):
 @keys.command(name='get', description='Get a key from your account')
 @app_commands.describe(key='The key to get')
 async def get_key(ctx: discord.Interaction, key: str):
-    user = rotur.get_user_by('discord_id', str(ctx.user.id))
+    user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
         return
@@ -2190,7 +2153,7 @@ async def quote_command(ctx: discord.Interaction, message_id: str):
 @allowed_everywhere
 @tree.command(name='accorigins', description='Get stats on how many accounts are linked to each rotur OS')
 async def accorigins(ctx: discord.Interaction):
-    system_stats = requests.get(f"{server}/stats/systems").json()
+    _, system_stats = await rotur.stats_systems()
     embed = discord.Embed(title="Account Origins", color=discord.Color.blue())
     
     if not system_stats or not isinstance(system_stats, dict):
@@ -2217,7 +2180,7 @@ async def counting_stats(ctx: discord.Interaction):
     if ctx.channel is None:
         await send_message(ctx.response, "This command can only be used in a channel!", ephemeral=True)
         return
-    await ctx.response.defer()
+    await ctx.response.defer(thinking=True)
 
     channel_id = str(ctx.channel.id)
 
@@ -2225,7 +2188,11 @@ async def counting_stats(ctx: discord.Interaction):
         await send_message(ctx.followup, "This command only works in the counting channel!", ephemeral=True)
         return
 
-    stats = counting.get_counting_stats(channel_id)
+    try:
+        stats = counting.get_counting_stats(channel_id)
+    except Exception as e:
+        await send_message(ctx.followup, f"❌ Error reading counting stats: {e}", ephemeral=True)
+        return
 
     embed = discord.Embed(
         title="🔢 Counting Statistics",
@@ -2279,7 +2246,7 @@ async def counting_stats(ctx: discord.Interaction):
                 display_name = f"{user.name}#{user.discriminator}" if getattr(user, 'discriminator', None) else user.name
             except Exception:
                 try:
-                    rot = rotur.get_user_by('discord_id', str(uid))
+                    rot = await rotur.get_user_by('discord_id', str(uid))
                     if rot and not rot.get('error'):
                         display_name = rot.get('username', uid)
                 except Exception:
@@ -2300,7 +2267,7 @@ async def counting_stats(ctx: discord.Interaction):
                 display_name = f"{user.name}#{user.discriminator}" if getattr(user, 'discriminator', None) else user.name
             except Exception:
                 try:
-                    rot = rotur.get_user_by('discord_id', str(uid))
+                    rot = await rotur.get_user_by('discord_id', str(uid))
                     if rot and not rot.get('error'):
                         display_name = rot.get('username', uid)
                 except Exception:
@@ -2312,7 +2279,7 @@ async def counting_stats(ctx: discord.Interaction):
 
     embed.set_footer(text="Only users with rotur accounts can participate!")
 
-    await send_message(ctx.response, embed=embed)
+    await send_message(ctx.followup, embed=embed)
 
 @allowed_everywhere
 @tree.command(name='reset_counting', description='Reset the counting (Admin only)')
@@ -2524,7 +2491,7 @@ async def on_message(message):
             
             if user_id not in activity_data["users"]:
                 activity_data["users"][user_id] = 0
-                rotur_user = rotur.get_user_by('discord_id', user_id)
+                rotur_user = await rotur.get_user_by('discord_id', user_id)
                 if rotur_user and rotur_user.get('error') != "User not found":
                     credit_amount = get_user_highest_role_credit(message.author)
                     
@@ -2975,7 +2942,14 @@ if token is None:
 token = str(token)
 
 def parseMessages(messages: list) -> str:
-    return "\n".join([f"[{m['timestamp']}] {m['author']['username']}{f' (replying to {m['referenced_message']['author']['username']}: \"{m['referenced_message']['content']}\")' if m.get('referenced_message') else ''}: {m['content']}" for m in messages])
+    lines = []
+    for m in messages:
+        prefix = f"[{m['timestamp']}] {m['author']['username']}"
+        if m.get('referenced_message'):
+            rm = m['referenced_message']
+            prefix += f" (replying to {rm['author']['username']}: \"{rm['content']}\")"
+        lines.append(f"{prefix}: {m['content']}")
+    return "\n".join(lines)
 
 async def call_tool(name: str, arguments: dict) -> str:
     async with aiohttp.ClientSession() as session:
@@ -2998,14 +2972,14 @@ async def call_tool(name: str, arguments: dict) -> str:
                     })
                 return parseMessages(msgs[::-1])
             case "search_posts":
-                async with session.get(f"{server}/search_posts?limit=20&q={arguments.get('query')}") as resp:
-                    return json.dumps(await resp.json())
+                _, payload = await rotur.search_posts(arguments.get('query') or "", limit=20)
+                return json.dumps(payload)
             case "get_user":
-                async with session.get(f"{server}/profile?include_posts=0&username={arguments.get('username')}") as resp:
-                    return json.dumps(await resp.json())
+                _, payload = await rotur.profile_by_username(arguments.get('username') or "", include_posts=0)
+                return json.dumps(payload)
             case "get_posts":
-                async with session.get(f"{server}/profile?include_posts=1&username={arguments.get('username')}") as resp:
-                    return json.dumps(await resp.json())
+                _, payload = await rotur.profile_by_username(arguments.get('username') or "", include_posts=1)
+                return json.dumps(payload)
             case "convert_timestamp":
                 ts = arguments.get("timestamp")
                 if ts is None:
