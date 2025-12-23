@@ -880,7 +880,7 @@ async def create_embeds_from_user(user, use_emoji_badges=True):
     main_embed = discord.Embed(
         title=user.get('username', 'Unknown User'),
         description=description,
-        color=discord.Color.blue()
+        color=user.get("theme", {}).get("accent", discord.Color.blue())
     )
     
     username = user.get('username')
