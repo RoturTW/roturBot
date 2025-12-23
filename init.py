@@ -265,6 +265,39 @@ def get_user_highest_role_credit(member):
     
     return highest_credit
 
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            return float(value.strip())
+        return float(value)
+    except Exception:
+        return default
+
+
+def _subscription_daily_credit_multiplier(tier: str | None) -> float:
+    t = (tier or "Free").strip().lower()
+    return {
+        "free": 1.0,
+        "lite": 1.0,
+        "plus": 1.0,
+        "drive": 2.0,
+        "pro": 3.0,
+        "max": 3.0,
+    }.get(t, 1.0)
+
+
+def _wealth_daily_credit_multiplier(balance: float) -> float:
+    if balance > 1000:
+        return 0.0
+    if balance > 500:
+        return 0.5
+    return 1.0
+
 async def award_daily_credit(user_id, credit_amount):
     """Award daily credit to a user via the rotur API"""
     try:
@@ -276,42 +309,58 @@ async def award_daily_credit(user_id, credit_amount):
         if not username:
             return False, "No username found"
 
-        try:
-            currency = float(user.get("currency", 0))
-            if currency > 500:
-                credit_amount /= 2
-            if currency > 1000:
-                return False, "Balance is too high"
-        except:
-            pass
-        
-        result = await rotur.transfer_credits("rotur", username, credit_amount, "daily credit")
+        old_balance = _safe_float(user.get("sys.currency", user.get("currency", 0)), 0.0)
+        tier = (user.get("sys.subscription", {}) or {}).get("tier", "Free")
+        sub_multiplier = _subscription_daily_credit_multiplier(str(tier) if tier is not None else "Free")
+        wealth_multiplier = _wealth_daily_credit_multiplier(old_balance)
+
+        base_amount = _safe_float(credit_amount, 0.0)
+        awarded_amount = round(base_amount * sub_multiplier * wealth_multiplier, 2)
+
+        if awarded_amount <= 0:
+            return True, (old_balance, old_balance, 0.0, str(tier or "Free"), sub_multiplier)
+
+        result = await rotur.transfer_credits("rotur", username, awarded_amount, "daily credit")
 
         print(f"Update result for {username}: {result}")
         
         if result.get("error"):
             return False, f"API error: {result.get('error')}"
         else:
-            old_balance = float(user.get("sys.currency", 0))
-            new_balance = old_balance + credit_amount
-            return True, (old_balance, new_balance)
+            new_balance = old_balance + awarded_amount
+            return True, (old_balance, new_balance, awarded_amount, str(tier or "Free"), sub_multiplier)
             
     except Exception as e:
         return False, f"Error: {str(e)}"
 
-async def send_credit_dm(user, old_balance, new_balance, credit_amount):
+async def send_credit_dm(user, old_balance, new_balance, credit_amount, subscription_tier: str = "Free", subscription_multiplier: float = 1.0):
     """Send a DM to the user about their daily credit award"""
     try:
         if not is_daily_credit_dm_enabled(user.id):
             return False
         embed = discord.Embed(
             title="💰 Daily Credits Awarded!",
-            description=f"You received **{credit_amount}** rotur credits for being active today!",
+            description=f"You received **{credit_amount:.2f}** rotur credits for being active today!",
             color=discord.Color.green()
         )
         embed.add_field(name="Previous Balance", value=f"{old_balance:.2f} credits", inline=True)
         embed.add_field(name="New Balance", value=f"{new_balance:.2f} credits", inline=True)
         embed.add_field(name="Credits Earned", value=f"+{credit_amount:.2f} credits", inline=True)
+        embed.add_field(
+            name="Subscription Multiplier",
+            value=f"{subscription_tier} (x{subscription_multiplier:g})",
+            inline=True,
+        )
+
+        if old_balance > 1000 and credit_amount <= 0:
+            embed.add_field(
+                name="Note",
+                value=(
+                    "Daily credits are designed to help lower-balance users build up their credits. "
+                    "Since your balance is already high, you don't receive daily credits right now."
+                ),
+                inline=False,
+            )
         embed.set_footer(text="Keep being active to earn more daily credits!")
         
         await user.send(embed=embed)
@@ -861,6 +910,46 @@ async def requests_reject_all(ctx: discord.Interaction):
 
 async def create_embeds_from_user(user, use_emoji_badges=True):
     """Create an embed from a user object."""
+
+    def coerce_discord_color(value, fallback: discord.Colour | None = None) -> discord.Colour | None:
+        """Accept discord.Colour/int/hex-string and return a discord.Colour (or None)."""
+        if fallback is None:
+            fallback = discord.Color.blue()
+
+        if value is None:
+            return fallback
+
+        if isinstance(value, discord.Colour):
+            return value
+
+        if isinstance(value, int):
+            return discord.Color(value=value & 0xFFFFFF)
+
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return fallback
+
+            s_lower = s.lower()
+            if s_lower.startswith('#'):
+                s = s[1:]
+            elif s_lower.startswith('0x'):
+                s = s[2:]
+
+            if re.fullmatch(r"[0-9a-fA-F]{3}", s):
+                s = ''.join(ch * 2 for ch in s)
+
+            if re.fullmatch(r"[0-9a-fA-F]{6}", s):
+                return discord.Color(value=int(s, 16))
+
+            if re.fullmatch(r"\d+", s):
+                try:
+                    return discord.Color(value=int(s) & 0xFFFFFF)
+                except Exception:
+                    return fallback
+
+        return fallback
+
     badges = user.get('badges', [])
     badge_emojis = []
     
@@ -876,11 +965,15 @@ async def create_embeds_from_user(user, use_emoji_badges=True):
         description = f"{badges_line}\n\n{bio_text}"
     else:
         description = bio_text
-    
+
+    theme = user.get("theme") if isinstance(user, dict) else None
+    accent_raw = theme.get("accent") if isinstance(theme, dict) else None
+    embed_color = coerce_discord_color(accent_raw, discord.Color.blue())
+
     main_embed = discord.Embed(
         title=user.get('username', 'Unknown User'),
         description=description,
-        color=user.get("theme", {}).get("accent", discord.Color.blue())
+        color=embed_color
     )
     
     username = user.get('username')
@@ -2498,9 +2591,9 @@ async def on_message(message):
                     success, result = await award_daily_credit(int(user_id), credit_amount)
                     
                     if success:
-                        old_balance, new_balance = result
+                        old_balance, new_balance, awarded_amount, subscription_tier, subscription_multiplier = result
                         
-                        activity_data["users"][user_id] = credit_amount
+                        activity_data["users"][user_id] = awarded_amount
                         save_daily_activity(activity_data)
                         
                         try:
@@ -2509,7 +2602,14 @@ async def on_message(message):
                             print(f"Failed to add daily credit reaction: {e}")
                         
                         try:
-                            await send_credit_dm(message.author, old_balance, new_balance, credit_amount)
+                            await send_credit_dm(
+                                message.author,
+                                old_balance,
+                                new_balance,
+                                awarded_amount,
+                                subscription_tier=subscription_tier,
+                                subscription_multiplier=subscription_multiplier,
+                            )
                         except Exception as e:
                             print(f"Failed to send DM to {message.author.name}: {e}")
 
