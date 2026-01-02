@@ -18,6 +18,8 @@ import aiohttp
 from io import BytesIO
 import asyncio, psutil
 
+from .helpers import reactionStorage
+
 from sympy import sympify
 import base64, hashlib
 # Optional import: ofsf (file system stats); ignore if unavailable
@@ -581,6 +583,24 @@ def _is_mistium(user_id: int) -> bool:
     except Exception:
         return False
 
+
+def _format_entry(link: str, count: int, reacts: dict, emoji: str) -> str:
+    """Return a readable field value for a leaderboard entry.
+
+    - Shows emoji and count, author (if available), jump link and a single-line preview of the message.
+    - Truncates long messages and sanitizes backticks/newlines for embed compatibility.
+    """
+    author = reacts.get('author') if isinstance(reacts, dict) else None
+    author = author or 'Unknown'
+    content = reacts.get('content') if isinstance(reacts, dict) else ''
+    if content is None:
+        content = ''
+    preview = ' '.join(str(content).splitlines())
+    preview = preview.replace('`', "'")
+    max_len = 300
+    if len(preview) > max_len:
+        preview = preview[:max_len].rstrip() + '…'
+    return f"{emoji} {count} • {author}\n> [Jump to](https://discord.com/channels/{originOS}/{link}) | {preview}"
 
 @allowed_everywhere
 @tree.command(name='purge', description='[Mistium only] Delete a number of recent messages from this channel')
@@ -1796,6 +1816,76 @@ async def here(ctx: discord.Interaction):
     await send_message(ctx.response, "@here", allowed_mentions=discord.AllowedMentions(everyone=True))
 
 @allowed_everywhere
+@tree.command(name='most_true', description='Show top 10 most true messages')
+async def most_true(ctx: discord.Interaction):
+     
+     try:
+        await ctx.response.defer()
+        stats = reactionStorage.load_reaction_stats() or {}
+
+        cur_emoji = "✅"
+        neg_emoji = "❌"
+
+        entries: list[tuple[str, int, dict]] = []
+        for link, reacts in stats.items():
+            if not isinstance(reacts, dict):
+                continue
+            count = int(reacts.get(cur_emoji, 0) or 0) - int(reacts.get(neg_emoji, 0) or 0)
+            if count > 0:
+                entries.append((link, count, reacts))
+
+        if not entries:
+            await send_message(ctx.followup, f"No messages have received any {cur_emoji} reactions yet.", ephemeral=True)
+            return
+
+        entries.sort(key=lambda e: e[1], reverse=True)
+        top = entries[:10]
+
+        embed = discord.Embed(title="Most True Messages", description=f"Messages with the most {cur_emoji} reactions", color=discord.Color.green())
+        for i, (link, count, reacts) in enumerate(top, start=1):
+            value = _format_entry(link, count, reacts, cur_emoji)
+            embed.add_field(name=f"#{i}", value=value, inline=False)
+
+        await send_message(ctx.followup, embed=embed)
+     except Exception as e:
+        await send_message(ctx.followup, f"Error generating leaderboard: {str(e)}", ephemeral=True)
+
+@allowed_everywhere
+@tree.command(name='most_false', description='Show top 10 most false messages')
+async def most_false(ctx: discord.Interaction):
+    try:
+        await ctx.response.defer()
+        stats = reactionStorage.load_reaction_stats() or {}
+
+        cur_emoji = "❌"
+        neg_emoji = "✅"
+
+        entries: list[tuple[str, int, dict]] = []
+        for link, reacts in stats.items():
+            if not isinstance(reacts, dict):
+                continue
+            count = int(reacts.get(cur_emoji, 0) or 0) - int(reacts.get(neg_emoji, 0) or 0)
+            if count > 0:
+                entries.append((link, count, reacts))
+
+        if not entries:
+            await send_message(ctx.followup, f"No messages have received any {cur_emoji} reactions yet.", ephemeral=True)
+            return
+
+        entries.sort(key=lambda e: e[1], reverse=True)
+        top = entries[:10]
+
+        embed = discord.Embed(title="Most False Messages", description=f"Messages with the most {cur_emoji} reactions", color=discord.Color.red())
+        for i, (link, count, reacts) in enumerate(top, start=1):
+            # Use the same formatting helper as most_true for consistency
+            value = _format_entry(link, count, reacts, cur_emoji)
+            embed.add_field(name=f"#{i}", value=value, inline=False)
+
+        await send_message(ctx.followup, embed=embed)
+    except Exception as e:
+        await send_message(ctx.followup, f"Error generating leaderboard: {str(e)}", ephemeral=True)
+
+@allowed_everywhere
 @tree.command(name='link', description='[EPHEMERAL] Link your Discord account to your rotur account')
 @app_commands.describe(username='Your rotur username', password='Your rotur password')
 async def link(ctx: discord.Interaction, username: str, password: str):
@@ -2794,14 +2884,45 @@ async def on_message(message):
             await roturacc.query(spl, channel, message.author, _MODULE_DIR)
 
 @client.event
+async def on_reaction_remove(reaction, user):
+    if reaction.message.guild is None or str(reaction.message.guild.id) != originOS:
+        return
+    
+    if reaction.message.author == client.user or user == client.user:
+        return
+    
+    emoji = str(reaction.emoji)
+
+    message = reaction.message
+
+    message_link = f"{message.channel.id}/{message.id}"
+
+    stats = reactionStorage.load_reaction_stats() or {}
+    if message_link in stats:
+        stats[message_link][emoji] = stats[message_link].get(emoji, 0) - 1
+
+@client.event
 async def on_reaction_add(reaction, user):
     if reaction.message.guild is None or str(reaction.message.guild.id) != originOS:
         return
-
+    
     if reaction.message.author == client.user or user == client.user:
         return
+    
+    emoji = str(reaction.emoji)
 
-    if reaction.emoji == '🔥' and reaction.count >= 4:
+    message = reaction.message
+    message_link = f"{message.channel.id}/{message.id}"
+    
+    stats = reactionStorage.load_reaction_stats()
+    if message_link not in stats:
+        stats[message_link] = {}
+    stats[message_link][emoji] = stats[message_link].get(emoji, 0) + 1
+    stats[message_link]["author"] = message.author.name
+    stats[message_link]["content"] = message.content[:500]
+    reactionStorage.save_reaction_stats(stats)
+
+    if emoji == '🔥' and reaction.count >= 4:
         with open(os.path.join(_MODULE_DIR, "store", "roturboarded.json"), 'r') as f:
             data = json.load(f)
         id = f"{reaction.message.id}/{reaction.message.channel.id}"
