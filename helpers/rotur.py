@@ -202,7 +202,6 @@ async def users_delete(auth: str, key: str) -> tuple[int, Any]:
     )
     return status, payload
 
-
 async def get_user_login(username: str, password_hash: str) -> tuple[int, Any]:
     return await api_json("GET", "/get_user", params={"username": username, "password": password_hash})
 
@@ -309,6 +308,14 @@ async def delete_user(username):
     ) as resp:
         return await resp.json()
 
+async def ban_user(username):
+    session = await get_session()
+    async with session.post(
+        f"{get_base_url()}/admin/ban_user",
+        json={"username": username},
+        headers=ADMIN_HEADERS,
+    ) as resp:
+        return await resp.json()
 
 async def transfer_credits(from_username, to_username, amount, note=""):
     session = await get_session()

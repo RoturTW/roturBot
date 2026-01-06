@@ -38,6 +38,7 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] get",
                 "!roturacc [name] size",
                 "!roturacc [name] delete",
+                "!roturacc [name] ban",
                 "!roturacc [name] refresh_token",
                 "Mistium only:",
                 "!roturacc [system] get_users",
@@ -150,6 +151,17 @@ async def query(spl, channel, user, dir):
                 await channel.send(resp.get("error"))
             else:
                 await channel.send(f"Deleted user {username} from your system.")
+        case 'ban':
+            user_data = await rotur.get_user_by("username", username)
+            if (not user_data or user_data.get("username", "") == "") or (not isMistium and user_data.get("system") != user_system["name"]):
+                await channel.send(f"User {username} not found in your system.")
+                return
+
+            resp = await rotur.ban_user(user_data.get("username"))
+            if "error" in resp:
+                await channel.send(resp.get("error"))
+            else:
+                await channel.send(f"Banned user {username}.")
         case 'get_users':
             if not isMistium:
                 await channel.send("Only mistium can view users")
