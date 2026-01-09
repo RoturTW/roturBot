@@ -1901,11 +1901,11 @@ async def link(ctx: discord.Interaction, username: str, password: str):
         await send_message(ctx.response, err, ephemeral=True)
         return
     try:
-        status, _payload = await rotur.users_patch(token, "discord_id", str(ctx.user.id))
-        if status == 200:
+        resp = await rotur.update_user("update", user.get('username'), "discord_id", str(ctx.user.id))
+        if not resp.get("error"):
             await send_message(ctx.response, "Your Discord account has been linked to your rotur account.", ephemeral=True)
         else:
-            await send_message(ctx.response, f"Failed to link account. Server responded with status {status}.", ephemeral=True)
+            await send_message(ctx.response, f"Failed to link account. Server responded with: {resp.get("error")}.", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error linking account: {str(e)}", ephemeral=True)
     return
@@ -1948,11 +1948,11 @@ async def unlink(ctx: discord.Interaction):
         await send_message(ctx.response, "No auth token found for your account.", ephemeral=True)
         return
     try:
-        status, _payload = await rotur.users_patch(token, "discord_id", "")
-        if status == 200:
+        resp = await rotur.update_user("update", user.get('username'), "discord_id", "")
+        if not resp.get("error"):
             await send_message(ctx.response, "Your Discord account has been unlinked from your rotur account.", ephemeral=True)
         else:
-            await send_message(ctx.response, f"Failed to unlink account. Server responded with status {status}.", ephemeral=True)
+            await send_message(ctx.response, f"Failed to unlink account. Server responded with: {resp.get("error")}.", ephemeral=True)
     except Exception as e:
         await send_message(ctx.response, f"Error unlinking account: {str(e)}", ephemeral=True)
     return
