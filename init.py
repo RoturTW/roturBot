@@ -2899,7 +2899,8 @@ async def on_reaction_remove(reaction, user):
 
     stats = reactionStorage.load_reaction_stats() or {}
     if message_link in stats:
-        stats[message_link][emoji] = stats[message_link].get(emoji, 0) - 1
+        stats[message_link][emoji] = reaction.count
+    reactionStorage.save_reaction_stats(stats)
 
 @client.event
 async def on_reaction_add(reaction, user):
@@ -2917,7 +2918,7 @@ async def on_reaction_add(reaction, user):
     stats = reactionStorage.load_reaction_stats()
     if message_link not in stats:
         stats[message_link] = {}
-    stats[message_link][emoji] = stats[message_link].get(emoji, 0) + 1
+    stats[message_link][emoji] = reaction.count
     stats[message_link]["author"] = message.author.name
     stats[message_link]["content"] = message.content[:500]
     reactionStorage.save_reaction_stats(stats)
