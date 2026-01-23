@@ -1228,7 +1228,7 @@ async def usage(ctx: discord.Interaction):
     if ofsf is None:
         await send_message(ctx.response, "The file system usage service is not available right now.")
         return
-    usage_data = ofsf.get_user_file_size(user.get("username", "unknown"))
+    usage_data = await rotur.get_user_file_size(user.get("key"), user.get("username", "unknown"))
     if usage_data is None:
         await send_message(ctx.response, "No file system found for your account.")
         return

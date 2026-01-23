@@ -69,7 +69,7 @@ async def query(spl, channel, user, dir):
     
     match spl[2]:
         case 'size':
-            usage_data = ofsf.get_user_file_size(username)
+            usage_data = await rotur.get_user_file_size(user.get("key"), username)
             if usage_data is None:
                 await channel.send(f"No file system found for user {username}.")
                 return

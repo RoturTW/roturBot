@@ -368,6 +368,13 @@ async def get_user(token):
     ) as resp:
         return await resp.json()
 
+async def get_user_file_size(token, username):
+    session = await get_session()
+    async with session.get(
+        f"{get_base_url()}/files/usage?auth={token}",
+        params={"username": username},
+    ) as resp:
+        return await resp.json()
 
 async def close():
     global _session
