@@ -22,11 +22,6 @@ from .helpers import reactionStorage
 
 from sympy import sympify
 import base64, hashlib
-# Optional import: ofsf (file system stats); ignore if unavailable
-try:
-    import ofsf  # type: ignore
-except Exception:
-    ofsf = None
 from datetime import datetime, timezone, timedelta
 
 # logging.basicConfig(level=logging.DEBUG)
@@ -1224,9 +1219,6 @@ async def usage(ctx: discord.Interaction):
     user = await rotur.get_user_by('discord_id', str(ctx.user.id))
     if user is None or user.get('error') == "User not found":
         await send_message(ctx.response, "You aren't linked to rotur.", ephemeral=True)
-        return
-    if ofsf is None:
-        await send_message(ctx.response, "The file system usage service is not available right now.")
         return
     usage_data = await rotur.get_user_file_size(user.get("key"), user.get("username", "unknown"))
     if usage_data is None:

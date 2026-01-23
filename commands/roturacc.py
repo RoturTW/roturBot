@@ -1,5 +1,4 @@
 import json, os, discord
-import ofsf, time
 from ..helpers import rotur
 
 MISTIUM_ID = "603952506330021898"
