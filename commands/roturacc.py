@@ -202,7 +202,7 @@ async def query(spl, channel, user, dir):
             if "error" in resp:
                 await channel.send(resp.get("error"))
             else:
-                await channel.send(f"Added subscription {sub} to {username} for 30 days")
+                await channel.send(f"Added subscription {sub} to {username} for 31 days")
         case "ban_word":
             if not isMistium:
                 await channel.send("Only mistium can ban words")
