@@ -271,6 +271,153 @@ async def get_user_by(key, value):
         headers=ADMIN_HEADERS,
     ) as resp:
         return await resp.json()
+    
+    # Group API wrappers
+    
+async def groups_create(auth: str, tag: str, name: str, description: str = "", icon: str = "", public: bool = False) -> tuple[int, Any]:
+    """Create a new group."""
+    params = {"tag": tag, "name": name, "description": description, "icon": icon, "public": str(public).lower(), "auth": auth}
+    return await api_json("POST", "/groups/create", params=params, timeout_total=10)
+
+async def groups_search(auth: str, query: str) -> tuple[int, Any]:
+    """Search groups."""
+    params = {"query": query, "auth": auth}
+    return await api_json("GET", "/groups/search", params=params, timeout_total=10)
+
+async def groups_join(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Join a group."""
+    return await api_json("POST", f"/groups/{grouptag}/join", params={"auth": auth}, timeout_total=10)
+
+async def groups_leave(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Leave a group."""
+    return await api_json("POST", f"/groups/{grouptag}/leave", params={"auth": auth}, timeout_total=10)
+
+async def groups_get(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Get a group."""
+    return await api_json("GET", f"/groups/{grouptag}", params={"auth": auth}, timeout_total=10)
+
+async def groups_update(auth: str, grouptag: str, description: str | None = None, icon: str | None = None, public: bool | None = None) -> tuple[int, Any]:
+    """Update a group. Only fields provided are updated."""
+    json_body: dict[str, Any] = {}
+    if description is not None:
+        json_body["description"] = description
+    if icon is not None:
+        json_body["icon"] = icon
+    if public is not None:
+        json_body["public"] = public
+    return await api_json("PATCH", f"/groups/{grouptag}?auth={auth}", json_body=json_body, timeout_total=10)
+
+async def groups_delete(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Delete a group."""
+    return await api_json("DELETE", f"/groups/{grouptag}", json_body={"auth": auth}, timeout_total=10)
+
+async def groups_represent(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Represent a group (set as sys.group)."""
+    return await api_json("POST", f"/groups/{grouptag}/rep", params={"auth": auth}, timeout_total=10)
+
+async def groups_disrepresent(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Disrepresent a group."""
+    return await api_json("POST", f"/groups/{grouptag}/disrep", params={"auth": auth}, timeout_total=10)
+
+async def groups_report(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Report a group."""
+    return await api_json("POST", f"/groups/{grouptag}/report", params={"auth": auth}, timeout_total=10)
+
+async def groups_get_mine(auth: str) -> tuple[int, Any]:
+    """Get groups the user is a member of."""
+    return await api_json("GET", "/groups/mine", params={"auth": auth}, timeout_total=10)
+
+async def groups_get_announcements(auth: str, grouptag: str, limit: int = 10) -> tuple[int, Any]:
+    """Get group announcements."""
+    return await api_json("GET", f"/groups/{grouptag}/announcements", params={"auth": auth, "limit": limit}, timeout_total=10)
+
+async def groups_create_announcement(auth: str, grouptag: str, title: str, body: str = "", ping_members: bool = False) -> tuple[int, Any]:
+    """Create an announcement."""
+    params = {"auth": auth, "title": title, "body": body, "ping_members": str(ping_members).lower()}
+    return await api_json("POST", f"/groups/{grouptag}/announcements", params=params, timeout_total=10)
+
+async def groups_delete_announcement(auth: str, grouptag: str, announcement_id: str) -> tuple[int, Any]:
+    """Delete an announcement."""
+    return await api_json("DELETE", f"/groups/{grouptag}/announcements/{announcement_id}", params={"auth": auth}, timeout_total=10)
+
+async def groups_toggle_announcement_mute(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Toggle announcement mute status."""
+    return await api_json("POST", f"/groups/{grouptag}/announcements/mute", params={"auth": auth}, timeout_total=10)
+
+async def groups_get_events(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Get group events."""
+    return await api_json("GET", f"/groups/{grouptag}/events", params={"auth": auth}, timeout_total=10)
+
+async def groups_create_event(auth: str, grouptag: str, title: str, description: str = "", location: str = "",
+                            start_time: int = 0, duration_hours: int = 1,
+                            visibility: str = "MEMBERS", published: bool = False) -> tuple[int, Any]:
+    """Create an event."""
+    params = {
+        "auth": auth,
+        "title": title,
+        "description": description,
+        "location": location,
+        "start_time": str(start_time),
+        "duration_hours": str(duration_hours),
+        "visibility": visibility,
+        "published": str(published).lower(),
+    }
+    return await api_json("POST", f"/groups/{grouptag}/events", params=params, timeout_total=10)
+
+async def groups_send_tip(auth: str, grouptag: str, amount: float) -> tuple[int, Any]:
+    """Send a tip to a group."""
+    params = {"auth": auth, "amount": str(amount)}
+    return await api_json("POST", f"/groups/{grouptag}/tips", params=params, timeout_total=10)
+
+async def groups_get_tips(auth: str, grouptag: str, limit: int = 20) -> tuple[int, Any]:
+    """Get group tips."""
+    return await api_json("GET", f"/groups/{grouptag}/tips", params={"auth": auth, "limit": limit}, timeout_total=10)
+
+async def groups_get_roles(auth: str, grouptag: str) -> tuple[int, Any]:
+    """Get group roles."""
+    return await api_json("GET", f"/groups/{grouptag}/roles", params={"auth": auth}, timeout_total=10)
+
+async def groups_create_role(auth: str, grouptag: str, name: str, description: str = "",
+                            priority: int = 50, assign_on_join: bool = False,
+                            self_assignable: bool = False) -> tuple[int, Any]:
+    """Create a role."""
+    params = {
+        "auth": auth,
+        "name": name,
+        "description": description,
+        "priority": str(priority),
+        "assign_on_join": str(assign_on_join).lower(),
+        "self_assignable": str(self_assignable).lower(),
+    }
+    return await api_json("POST", f"/groups/{grouptag}/roles", params=params, timeout_total=10)
+
+async def groups_update_role(auth: str, grouptag: str, role_id: str, **kwargs) -> tuple[int, Any]:
+    """Update a role."""
+    return await api_json("PATCH", f"/groups/{grouptag}/roles/{role_id}?auth={auth}", json_body=kwargs, timeout_total=10)
+
+async def groups_delete_role(auth: str, grouptag: str, role_id: str) -> tuple[int, Any]:
+    """Delete a role."""
+    return await api_json("DELETE", f"/groups/{grouptag}/roles/{role_id}", params={"auth": auth}, timeout_total=10)
+
+async def groups_get_user_roles(auth: str, grouptag: str, user_id: str) -> tuple[int, Any]:
+    """Get a user's roles in a group."""
+    return await api_json("GET", f"/groups/{grouptag}/members/{user_id}/roles", params={"auth": auth}, timeout_total=10)
+
+async def groups_get_user_permissions(auth: str, grouptag: str, user_id: str) -> tuple[int, Any]:
+    """Get a user's permissions in a group."""
+    return await api_json("GET", f"/groups/{grouptag}/members/{user_id}/permissions", params={"auth": auth}, timeout_total=10)
+
+async def groups_get_user_benefits(auth: str, grouptag: str, user_id: str) -> tuple[int, Any]:
+    """Get a user's benefits from a group."""
+    return await api_json("GET", f"/groups/{grouptag}/members/{user_id}/benefits", params={"auth": auth}, timeout_total=10)
+
+async def groups_assign_role(auth: str, grouptag: str, user_id: str, role_id: str) -> tuple[int, Any]:
+    """Assign a role to a user."""
+    return await api_json("POST", f"/groups/{grouptag}/members/{user_id}/roles/{role_id}", params={"auth": auth}, timeout_total=10)
+
+async def groups_remove_role(auth: str, grouptag: str, user_id: str, role_id: str) -> tuple[int, Any]:
+    """Remove a role from a user."""
+    return await api_json("DELETE", f"/groups/{grouptag}/members/{user_id}/roles/{role_id}", params={"auth": auth}, timeout_total=10)
 
 
 async def update_user(type, username, key=None, value=None):
