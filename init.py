@@ -918,6 +918,14 @@ async def user(ctx: discord.Interaction, username: str):
         await send_message(ctx.followup, 'User not found.')
         return
 
+    if (str(user.get('sys.banned', False)).lower() == "true"):
+        await send_message(ctx.followup, embeds=[discord.Embed(
+            title="Account Banned",
+            description=f"The account **{user.get('username', 'Unknown')}** has been banned.",
+            color=discord.Color.red()
+        )])
+        return
+
     if (str(user.get('private', False)).lower() == "true"):
         await send_message(ctx.followup, embeds=[discord.Embed(
             title="Private Profile",
