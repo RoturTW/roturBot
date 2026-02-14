@@ -3218,6 +3218,7 @@ async def query_cerebras(messages: list, my_msg: discord.Message) -> dict:
     Always returns a dict shaped like the Cerebras response so the caller
     can safely do resp.get("choices")[0]["message"]["content"].
     """
+    load_dotenv(override=True)
     api_key = os.getenv("CEREBRAS_API_KEY", "")
     model = os.getenv("CEREBRAS_MODEL", "llama-3.3-70b")
 
