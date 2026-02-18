@@ -518,282 +518,6 @@ async def _get_username_from_discord(discord_id: int) -> str | None:
     return None
 
 
-admin_standing = app_commands.Group(name='admin_standing', description='Admin standing management commands')
-admin_standing = app_commands.allowed_installs(guilds=True)(admin_standing)
-admin_standing = app_commands.allowed_contexts(guilds=True)(admin_standing)
-tree.add_command(admin_standing)
-
-
-class StandingSetModal(ui.Modal):
-    username_input = ui.TextInput(label='Username', placeholder='Enter username', required=True, min_length=1, max_length=50)
-    level_input = ui.TextInput(
-        label='Standing Level',
-        placeholder='good, warning, suspended, or banned',
-        required=True,
-        min_length=1,
-        max_length=20
-    )
-    reason_input = ui.TextInput(
-        label='Reason',
-        style=discord.TextStyle.paragraph,
-        placeholder='Reason for changing standing...',
-        required=True,
-        min_length=1,
-        max_length=500
-    )
-
-    def __init__(self):
-        super().__init__(title='Set User Standing')
-
-    async def on_submit(self, interaction: discord.Interaction):
-        if not _is_mistium(interaction.user.id):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
-            return
-
-        username = self.username_input.value.strip().lower()
-        level = self.level_input.value.strip().lower()
-        reason = self.reason_input.value.strip()
-
-        if level not in ["good", "warning", "suspended", "banned"]:
-            await interaction.response.send_message(
-                "Invalid standing level. Must be one of: good, warning, suspended, banned",
-                ephemeral=True
-            )
-            return
-
-        try:
-            await interaction.response.defer(ephemeral=True)
-            
-            status, data = await rotur.set_standing(username, level, reason)
-            
-            if status == 200 and data.get('success'):
-                new_standing = data.get('standing', level)
-                color_map = {
-                    'good': discord.Color.green(),
-                    'warning': discord.Color.yellow(),
-                    'suspended': discord.Color.orange(),
-                    'banned': discord.Color.red(),
-                }
-                
-                embed = discord.Embed(
-                    title="Standing Updated",
-                    description=f"Successfully updated standing for **{username}**",
-                    color=color_map.get(new_standing, discord.Color.blue())
-                )
-                embed.add_field(name="New Standing", value=new_standing.upper(), inline=True)
-                embed.add_field(name="Reason", value=reason, inline=False)
-                
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                error_msg = data.get('error', 'Unknown error occurred') if isinstance(data, dict) else 'Unknown error'
-                await interaction.followup.send(f"Failed to set standing: {error_msg}", ephemeral=True)
-                
-        except Exception as e:
-            await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
-
-
-class StandingRecoverModal(ui.Modal):
-    username_input = ui.TextInput(label='Username', placeholder='Enter username', required=True, min_length=1, max_length=50)
-    reason_input = ui.TextInput(
-        label='Reason',
-        style=discord.TextStyle.paragraph,
-        placeholder='Reason for recovering standing...',
-        required=True,
-        min_length=1,
-        max_length=500
-    )
-
-    def __init__(self):
-        super().__init__(title='Recover User Standing')
-
-    async def on_submit(self, interaction: discord.Interaction):
-        if not _is_mistium(interaction.user.id):
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
-            return
-
-        username = self.username_input.value.strip().lower()
-        reason = self.reason_input.value.strip()
-
-        try:
-            await interaction.response.defer(ephemeral=True)
-            
-            status, data = await rotur.recover_standing(username, reason)
-            
-            if status == 200 and data.get('success'):
-                previous = data.get('previous_standing', 'unknown')
-                new_standing = data.get('new_standing', 'good')
-                color_map = {
-                    'good': discord.Color.green(),
-                    'warning': discord.Color.yellow(),
-                    'suspended': discord.Color.orange(),
-                    'banned': discord.Color.red(),
-                }
-                
-                embed = discord.Embed(
-                    title="Standing Recovered",
-                    description=f"Successfully recovered standing for **{username}**",
-                    color=color_map.get(new_standing, discord.Color.blue())
-                )
-                embed.add_field(name="Previous Standing", value=previous.upper(), inline=True)
-                embed.add_field(name="New Standing", value=new_standing.upper(), inline=True)
-                embed.add_field(name="Reason", value=reason, inline=False)
-                
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                error_msg = data.get('error', 'Unknown error occurred') if isinstance(data, dict) else 'Unknown error'
-                await interaction.followup.send(f"Failed to recover standing: {error_msg}", ephemeral=True)
-                
-        except Exception as e:
-            await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
-
-
-@admin_standing.command(name='set', description='Set a user\'s standing level (Admin only)')
-async def admin_standing_set(ctx: discord.Interaction):
-    if not _is_mistium(ctx.user.id):
-        await send_message(ctx.response, "You do not have permission to use this command.", ephemeral=True)
-        return
-    
-    modal = StandingSetModal()
-    await ctx.response.send_modal(modal)
-
-
-@admin_standing.command(name='recover', description='Recover a user\'s standing (Admin only)')
-async def admin_standing_recover(ctx: discord.Interaction):
-    if not _is_mistium(ctx.user.id):
-        await send_message(ctx.response, "You do not have permission to use this command.", ephemeral=True)
-        return
-    
-    modal = StandingRecoverModal()
-    await ctx.response.send_modal(modal)
-
-
-@admin_standing.command(name='history', description='View a user\'s standing history (Admin only)')
-@app_commands.describe(username='The username to check')
-async def admin_standing_history(ctx: discord.Interaction, username: str):
-    if not _is_mistium(ctx.user.id):
-        await send_message(ctx.response, "You do not have permission to use this command.", ephemeral=True)
-        return
-    
-    username = username.strip().lower()
-    await ctx.response.defer(ephemeral=True)
-    
-    try:
-        status, data = await rotur.get_standing_history(username)
-        
-        if status != 200:
-            error_msg = data.get('error', 'User not found') if isinstance(data, dict) else 'Failed to fetch history'
-            await send_message(ctx.followup, f"Error: {error_msg}", ephemeral=True)
-            return
-        
-        current_standing = data.get('standing', 'good')
-        history = data.get('history', [])
-        
-        color_map = {
-            'good': discord.Color.green(),
-            'warning': discord.Color.yellow(),
-            'suspended': discord.Color.orange(),
-            'banned': discord.Color.red(),
-        }
-        
-        embed = discord.Embed(
-            title=f"Standing History for {username}",
-            description=f"**Current Level:** {current_standing.upper()}",
-            color=color_map.get(current_standing, discord.Color.blue())
-        )
-        
-        if not history:
-            embed.add_field(name="History", value="No standing changes recorded.", inline=False)
-        else:
-            history_text = []
-            for entry in history[-25:]:
-                level = entry.get('level', 'unknown')
-                reason = entry.get('reason', 'No reason')
-                timestamp = entry.get('timestamp', 0)
-                admin_id = entry.get('admin_id', 'system')
-                
-                if timestamp:
-                    dt = datetime.fromtimestamp(timestamp, timezone.utc)
-                    time_str = dt.strftime('%b %d, %Y %H:%M UTC')
-                else:
-                    time_str = 'Unknown'
-                
-                history_text.append(f"**[{time_str}]** {level.upper()}")
-                history_text.append(f"  Reason: {reason}")
-                history_text.append(f"  By: {admin_id}")
-                history_text.append("")
-            
-            if history_text:
-                embed.add_field(name=f"History ({len(history)} entries)", value="\n".join(history_text[:1000]), inline=False)
-        
-        footer_text = f"Showing {min(len(history), 25)} of {len(history)} entries" if len(history) > 25 else "Showing all entries"
-        embed.set_footer(text=footer_text)
-        await send_message(ctx.followup, embed=embed, ephemeral=True)
-        
-    except Exception as e:
-        await send_message(ctx.followup, f"Error fetching standing history: {str(e)}", ephemeral=True)
-
-
-@admin_standing.command(name='view', description='View a user\'s current standing (Admin only)')
-@app_commands.describe(username='The username to check')
-async def admin_standing_view(ctx: discord.Interaction, username: str):
-    if not _is_mistium(ctx.user.id):
-        await send_message(ctx.response, "You do not have permission to use this command.", ephemeral=True)
-        return
-    
-    username = username.strip().lower()
-    await ctx.response.defer(ephemeral=True)
-    
-    try:
-        status, data = await rotur.get_user_standing(username)
-        
-        if status != 200:
-            error_msg = data.get('error', 'User not found') if isinstance(data, dict) else 'Failed to fetch standing'
-            await send_message(ctx.followup, f"Error: {error_msg}", ephemeral=True)
-            return
-        
-        current_standing = data.get('standing', 'good')
-        recover_at = data.get('recover_at', 0)
-        history = data.get('history', [])
-        
-        color_map = {
-            'good': discord.Color.green(),
-            'warning': discord.Color.yellow(),
-            'suspended': discord.Color.orange(),
-            'banned': discord.Color.red(),
-        }
-        
-        embed = discord.Embed(
-            title=f"Standing for {username}",
-            description=f"**Current Level:** {current_standing.upper()}",
-            color=color_map.get(current_standing, discord.Color.blue())
-        )
-        
-        if recover_at and recover_at > 0:
-            recover_dt = datetime.fromtimestamp(recover_at, timezone.utc)
-            embed.add_field(name="Automatic Recovery", value=f"<t:{recover_at}:R>", inline=False)
-        elif current_standing != 'good':
-            embed.add_field(name="Automatic Recovery", value="No scheduled recovery", inline=False)
-        
-        if history:
-            latest = history[-1]
-            level = latest.get('level', 'unknown')
-            reason = latest.get('reason', 'No reason')
-            timestamp = latest.get('timestamp', 0)
-            
-            if timestamp:
-                dt = datetime.fromtimestamp(timestamp, timezone.utc)
-                time_str = dt.strftime('%b %d, %Y %H:%M UTC')
-            else:
-                time_str = 'Unknown'
-            
-            embed.add_field(name="Latest Change", value=f"{level.upper()} - {reason}\n{time_str}", inline=False)
-        
-        await send_message(ctx.followup, embed=embed, ephemeral=True)
-        
-    except Exception as e:
-        await send_message(ctx.followup, f"Error fetching standing: {str(e)}", ephemeral=True)
-
-
 @allowed_everywhere
 @tree.command(name='standing', description='View your current standing and history')
 async def user_standing(ctx: discord.Interaction):
@@ -1260,6 +984,31 @@ async def create_embeds_from_user(user, use_emoji_badges=True):
             
         if user.get('banner'):
             main_embed.set_image(url=f"https://avatars.rotur.dev/.banners/{username}.gif?nocache={randomString(5)}")
+    
+    standing_data = user.get('sys.standing')
+    if standing_data:
+        standing_level = None
+        recover_at = None
+        
+        if isinstance(standing_data, dict):
+            standing_level = standing_data.get('level')
+            recover_at = standing_data.get('recover_at')
+        elif isinstance(standing_data, str):
+            standing_level = standing_data
+        
+        if standing_level and standing_level != 'good':
+            main_embed.color = {
+                'warning': discord.Color.yellow(),
+                'suspended': discord.Color.orange(),
+                'banned': discord.Color.red(),
+            }.get(standing_level, main_embed.color)
+            standing_value = f"{standing_level.upper()}"
+            
+            if recover_at and recover_at > 0:
+                recover_dt = datetime.fromtimestamp(recover_at, timezone.utc)
+                standing_value += f"\n<:recover:{recover_dt}:R>"
+            
+            main_embed.add_field(name="Standing", value=standing_value, inline=True)
     
     embeds = [main_embed]
     return embeds
@@ -4027,57 +3776,8 @@ async def call_tool(name: str, arguments: dict) -> str:
         
         return ""
 
-
-async def should_reply_fast_check(message: discord.Message) -> bool:
-    """Use a fast model to decide if roturbot should reply to a message mentioning rotur/roturbot"""
-    api_key = nvidia_token
-
-    messages = [
-        {
-            "role": "system", 
-            "content": "You are a filter for roturbot. Decide if roturbot should reply to messages. Reply with ONLY 'YES' if the message is a direct question, request for help, or meaningful interaction that warrants a response. Reply with ONLY 'NO' if it's just casual mention, spam, or doesn't need a bot response. Do not engage in any query about anything sexual or nsfw. This is an environment with kids in it."
-        },
-        {
-            "role": "system",
-            "content": await call_tool("get_context", {"channel": message.channel.id})
-        },
-        {
-            "role": "user",
-            "content": f"Message: {message.content}"
-        }
-    ]
-
-    try:
-        nvidia_client = AsyncOpenAI(
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key=api_key
-        )
-        
-        response = await nvidia_client.chat.completions.create(
-            model="z-ai/glm5",
-            messages=messages,
-            max_tokens=5,
-            temperature=0.1
-        )
-                
-        choice = response.choices[0]
-        content = choice.message.content.strip().upper()
-        
-        return content != "NO"
-    except Exception as e:
-        print(f"Error in fast reply check: {e}")
-        return True
-
-_USE_COLOR = sys.stdout.isatty() and os.getenv("NO_COLOR") is None
-_REASONING_COLOR = "\033[90m" if _USE_COLOR else ""
-_RESET_COLOR = "\033[0m" if _USE_COLOR else ""
-
 async def query_nvidia(messages: list, my_msg: discord.Message) -> dict:
-    """Call NVIDIA chat API with streaming and reasoning support.
-    
-    Uses GLM5 model with thinking enabled via the NVIDIA API.
-    Shows reasoning preview in Discord message every 3 seconds.
-    """
+    """Call NVIDIA chat API with reasoning support."""
     load_dotenv(override=True)
     api_key = os.getenv("NVIDIA_API_KEY", "")
     
@@ -4087,102 +3787,53 @@ async def query_nvidia(messages: list, my_msg: discord.Message) -> dict:
     )
 
     try:
-        full_content = ""
-        full_reasoning = ""
-        tool_calls_data = None
+        await my_msg.edit(content="Thinking...")
         
-        stream = await nvidia_client.chat.completions.create(
+        response = await nvidia_client.chat.completions.create(
             model="z-ai/glm4.7",
             messages=messages,
             temperature=1,
             top_p=1,
             max_tokens=16384,
             tools=tools,
-            extra_body={"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}},
-            stream=True
+            extra_body={"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}}
         )
         
-        import time
-        last_update_time = time.time()
-        update_interval_seconds = 3
-        has_shown_content = False
+        message = response.choices[0].message
+        full_content = message.content or ""
+        full_reasoning = getattr(message, "reasoning_content", None)
         
-        async for chunk in stream:
-            if not getattr(chunk, "choices", None):
-                continue
-            if len(chunk.choices) == 0 or getattr(chunk.choices[0], "delta", None) is None:
-                continue
-                
-            delta = chunk.choices[0].delta
+        tool_calls = getattr(message, 'tool_calls', None)
+        if tool_calls:
+            tool_calls_list = []
+            for tc in tool_calls:
+                tc_dict = tc if isinstance(tc, dict) else vars(tc)
+                func = tc_dict.get('function', {})
+                tool_calls_list.append({
+                    "id": tc_dict.get('id', ''),
+                    "type": tc_dict.get('type', 'function'),
+                    "function": {
+                        "name": func.get('name', '') if isinstance(func, dict) else getattr(func, 'name', ''),
+                        "arguments": func.get('arguments', '{}') if isinstance(func, dict) else getattr(func, 'arguments', '{}')
+                    }
+                })
             
-            # Handle reasoning content
-            reasoning = getattr(delta, "reasoning_content", None)
-            if reasoning:
-                full_reasoning += reasoning
-                print(f"{_REASONING_COLOR}{reasoning}{_RESET_COLOR}", end="")
-            
-            # Handle tool calls
-            if getattr(delta, "tool_calls", None):
-                if tool_calls_data is None:
-                    tool_calls_data = delta.tool_calls
-                else:
-                    # Accumulate tool call arguments
-                    for i, tc in enumerate(delta.tool_calls):
-                        if i < len(tool_calls_data):
-                            if hasattr(tc, 'function') and hasattr(tc.function, 'arguments') and tc.function.arguments:
-                                tool_calls_data[i].function.arguments += tc.function.arguments
-            
-            # Handle regular content
-            content_chunk = getattr(delta, "content", None)
-            if content_chunk:
-                full_content += content_chunk
-                has_shown_content = True
-            
-            # Update Discord message every few seconds
-            current_time = time.time()
-            if current_time - last_update_time >= update_interval_seconds:
-                last_update_time = current_time
-                try:
-                    if full_content.strip() and has_shown_content:
-                        # Show actual content once we have it
-                        await my_msg.edit(content=catify(full_content[:1900]))
-                    elif full_reasoning.strip():
-                        # Show reasoning preview while thinking
-                        # Get last ~120 chars of reasoning (about 2-3 lines)
-                        reasoning_preview = full_reasoning[-120:].strip()
-                        # Clean up the preview - remove extra whitespace and newlines
-                        reasoning_preview = reasoning_preview.replace('\n', ' ').replace('  ', ' ')
-                        if len(reasoning_preview) > 100:
-                            reasoning_preview = "..." + reasoning_preview[-100:]
-                        await my_msg.edit(content=f"Thinking: {reasoning_preview}")
-                except Exception:
-                    pass
-        
-        # Check if we have tool calls
-        if tool_calls_data:
             messages.append({
                 "role": "assistant",
                 "content": full_content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": tc.type,
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments
-                        }
-                    } for tc in tool_calls_data
-                ]
+                "tool_calls": tool_calls_list
             })
             
-            for call in tool_calls_data:
-                func_name = call.function.name
+            for tc in tool_calls:
+                tc_dict = tc if isinstance(tc, dict) else vars(tc)
+                func = tc_dict.get('function', {})
+                func_name = func.get('name', '') if isinstance(func, dict) else getattr(func, 'name', '')
                 try:
                     await my_msg.edit(content=f'Calling tool: {func_name}')
                 except Exception:
                     pass
                 
-                args_raw = call.function.arguments
+                args_raw = func.get('arguments', '{}') if isinstance(func, dict) else getattr(func, 'arguments', '{}')
                 try:
                     args = json.loads(args_raw)
                 except Exception:
@@ -4191,19 +3842,18 @@ async def query_nvidia(messages: list, my_msg: discord.Message) -> dict:
                 
                 tool_result = await call_tool(func_name, args)
                 messages.append({
-                    "tool_call_id": call.id,
+                    "tool_call_id": tc_dict.get('id', ''),
                     "role": "tool",
                     "content": tool_result
                 })
             
             return await query_nvidia(messages, my_msg)
         
-        # Return final response
         return {
             "choices": [{
                 "message": {
                     "content": full_content,
-                    "reasoning": full_reasoning if full_reasoning else None
+                    "reasoning": full_reasoning
                 },
                 "finish_reason": "stop"
             }]

@@ -215,13 +215,12 @@ class MemorySystem:
         
         # Use rapidfuzz for fast fuzzy matching
         memory_contents = [(m, m['content']) for m in active_memories]
-        if not process:
+        if not process or not memory_contents:
             return []
     
         matches = process.extract(
             query, 
             memory_contents, 
-            processor=lambda x: x[1],
             scorer=fuzz.partial_ratio,
             limit=limit * 2
         )

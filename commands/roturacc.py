@@ -39,6 +39,9 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] delete",
                 "!roturacc [name] ban",
                 "!roturacc [name] refresh_token",
+                "!roturacc <username> set_standing <level> <reason>",
+                "!roturacc <username> recover_standing <reason>",
+                "!roturacc <username> standing_history",
                 "Mistium only:",
                 "!roturacc [system] get_users",
                 "!roturacc [name] token",
@@ -289,3 +292,93 @@ async def query(spl, channel, user, dir):
                     await channel.send(f"Removed badge {badge} from {username}.")
                     return
             await channel.send(f"Badge {badge} not found.")
+        case "set_standing":
+            if not isMistium:
+                await channel.send("Only mistium can set standing")
+                return
+            username = spl[1]
+            if len(spl) < 5:
+                await channel.send("Usage: !roturacc <username> set_standing <level> <reason>")
+                return
+            level = spl[3].lower()
+            reason = " ".join(spl[4:])
+            
+            if level not in ["good", "warning", "suspended", "banned"]:
+                await channel.send("Invalid standing level. Must be: good, warning, suspended, or banned")
+                return
+            
+            user_data = await rotur.get_user_by("username", username)
+            if not user_data or user_data.get("error") == "User not found":
+                await channel.send(f"User {username} not found.")
+                return
+            
+            status, data = await rotur.set_standing(username, level, reason)
+            if status == 200 and data.get("success"):
+                new_standing = data.get("standing", level)
+                await channel.send(f"Standing for {username} set to {new_standing.upper()}. Reason: {reason}")
+            else:
+                error_msg = data.get("error", "Unknown error") if isinstance(data, dict) else "Unknown error"
+                await channel.send(f"Failed to set standing: {error_msg}")
+        case "recover_standing":
+            if not isMistium:
+                await channel.send("Only mistium can recover standing")
+                return
+            username = spl[1]
+            if len(spl) < 4:
+                await channel.send("Usage: !roturacc <username> recover_standing <reason>")
+                return
+            reason = " ".join(spl[3:])
+            
+            user_data = await rotur.get_user_by("username", username)
+            if not user_data or user_data.get("error") == "User not found":
+                await channel.send(f"User {username} not found.")
+                return
+            
+            status, data = await rotur.recover_standing(username, reason)
+            if status == 200 and data.get("success"):
+                previous = data.get("previous_standing", "unknown")
+                new_standing = data.get("new_standing", "good")
+                await channel.send(f"Standing recovered for {username}: {previous.upper()} → {new_standing.upper()}. Reason: {reason}")
+            else:
+                error_msg = data.get("error", "Unknown error") if isinstance(data, dict) else "Unknown error"
+                await channel.send(f"Failed to recover standing: {error_msg}")
+        case "standing_history":
+            if not isMistium:
+                await channel.send("Only mistium can view standing history")
+                return
+            username = spl[1]
+            
+            status, data = await rotur.get_standing_history(username)
+            if status != 200:
+                error_msg = data.get("error", "User not found") if isinstance(data, dict) else "Failed to fetch history"
+                await channel.send(f"Error: {error_msg}")
+                return
+            
+            current_standing = data.get("standing", "good")
+            history = data.get("history", [])
+            
+            lines = [f"Standing for {username}: {current_standing.upper()}", "History:"]
+            
+            if not history:
+                lines.append("No standing changes recorded.")
+            else:
+                from datetime import datetime, timezone
+                for entry in history[-15:]:
+                    level = entry.get("level", "unknown")
+                    reason = entry.get("reason", "No reason")
+                    timestamp = entry.get("timestamp", 0)
+                    admin_id = entry.get("admin_id", "system")
+                    
+                    if timestamp:
+                        dt = datetime.fromtimestamp(timestamp, timezone.utc)
+                        time_str = dt.strftime('%b %d, %Y %H:%M UTC')
+                    else:
+                        time_str = 'Unknown'
+                    
+                    lines.append(f"  [{time_str}] {level.upper()} - {reason}")
+                    lines.append(f"    By: {admin_id}")
+            
+            if len(history) > 15:
+                lines.append(f"\nShowing 15 of {len(history)} entries")
+            
+            await channel.send("\n".join(lines))
