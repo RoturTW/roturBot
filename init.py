@@ -1,5 +1,5 @@
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from dotenv import load_dotenv
 from .commands import stats, roturacc, counting, group
 from .helpers import rotur
@@ -506,6 +506,358 @@ def _format_entry(link: str, count: int, reacts: dict, emoji: str) -> str:
     if len(preview) > max_len:
         preview = preview[:max_len].rstrip() + '…'
     return f"{emoji} {count} • {author}\n> [Jump to](https://discord.com/channels/{originOS}/{link}) | {preview}"
+
+
+async def _get_username_from_discord(discord_id: int) -> str | None:
+    try:
+        status, user_data = await rotur.profile_by_discord_id(discord_id)
+        if status == 200 and user_data and user_data.get('error') != 'User not found':
+            return user_data.get('username')
+    except Exception:
+        pass
+    return None
+
+
+admin_standing = app_commands.Group(name='admin_standing', description='Admin standing management commands')
+admin_standing = app_commands.allowed_installs(guilds=True)(admin_standing)
+admin_standing = app_commands.allowed_contexts(guilds=True)(admin_standing)
+tree.add_command(admin_standing)
+
+
+class StandingSetModal(ui.Modal):
+    username_input = ui.TextInput(label='Username', placeholder='Enter username', required=True, min_length=1, max_length=50)
+    level_input = ui.TextInput(
+        label='Standing Level',
+        placeholder='good, warning, suspended, or banned',
+        required=True,
+        min_length=1,
+        max_length=20
+    )
+    reason_input = ui.TextInput(
+        label='Reason',
+        style=discord.TextStyle.paragraph,
+        placeholder='Reason for changing standing...',
+        required=True,
+        min_length=1,
+        max_length=500
+    )
+
+    def __init__(self):
+        super().__init__(title='Set User Standing')
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not _is_mistium(interaction.user.id):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        username = self.username_input.value.strip().lower()
+        level = self.level_input.value.strip().lower()
+        reason = self.reason_input.value.strip()
+
+        if level not in ["good", "warning", "suspended", "banned"]:
+            await interaction.response.send_message(
+                "Invalid standing level. Must be one of: good, warning, suspended, banned",
+                ephemeral=True
+            )
+            return
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            status, data = await rotur.set_standing(username, level, reason)
+            
+            if status == 200 and data.get('success'):
+                new_standing = data.get('standing', level)
+                color_map = {
+                    'good': discord.Color.green(),
+                    'warning': discord.Color.yellow(),
+                    'suspended': discord.Color.orange(),
+                    'banned': discord.Color.red(),
+                }
+                
+                embed = discord.Embed(
+                    title="Standing Updated",
+                    description=f"Successfully updated standing for **{username}**",
+                    color=color_map.get(new_standing, discord.Color.blue())
+                )
+                embed.add_field(name="New Standing", value=new_standing.upper(), inline=True)
+                embed.add_field(name="Reason", value=reason, inline=False)
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                error_msg = data.get('error', 'Unknown error occurred') if isinstance(data, dict) else 'Unknown error'
+                await interaction.followup.send(f"Failed to set standing: {error_msg}", ephemeral=True)
+                
+        except Exception as e:
+            await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
+
+
+class StandingRecoverModal(ui.Modal):
+    username_input = ui.TextInput(label='Username', placeholder='Enter username', required=True, min_length=1, max_length=50)
+    reason_input = ui.TextInput(
+        label='Reason',
+        style=discord.TextStyle.paragraph,
+        placeholder='Reason for recovering standing...',
+        required=True,
+        min_length=1,
+        max_length=500
+    )
+
+    def __init__(self):
+        super().__init__(title='Recover User Standing')
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not _is_mistium(interaction.user.id):
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            return
+
+        username = self.username_input.value.strip().lower()
+        reason = self.reason_input.value.strip()
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            status, data = await rotur.recover_standing(username, reason)
+            
+            if status == 200 and data.get('success'):
+                previous = data.get('previous_standing', 'unknown')
+                new_standing = data.get('new_standing', 'good')
+                color_map = {
+                    'good': discord.Color.green(),
+                    'warning': discord.Color.yellow(),
+                    'suspended': discord.Color.orange(),
+                    'banned': discord.Color.red(),
+                }
+                
+                embed = discord.Embed(
+                    title="Standing Recovered",
+                    description=f"Successfully recovered standing for **{username}**",
+                    color=color_map.get(new_standing, discord.Color.blue())
+                )
+                embed.add_field(name="Previous Standing", value=previous.upper(), inline=True)
+                embed.add_field(name="New Standing", value=new_standing.upper(), inline=True)
+                embed.add_field(name="Reason", value=reason, inline=False)
+                
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                error_msg = data.get('error', 'Unknown error occurred') if isinstance(data, dict) else 'Unknown error'
+                await interaction.followup.send(f"Failed to recover standing: {error_msg}", ephemeral=True)
+                
+        except Exception as e:
+            await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
+
+
+@admin_standing.command(name='set', description='Set a user\'s standing level (Admin only)')
+async def admin_standing_set(ctx: discord.Interaction):
+    if not _is_mistium(ctx.user.id):
+        await send_message(ctx.response, "You do not have permission to use this command.", ephemeral=True)
+        return
+    
+    modal = StandingSetModal()
+    await ctx.response.send_modal(modal)
+
+
+@admin_standing.command(name='recover', description='Recover a user\'s standing (Admin only)')
+async def admin_standing_recover(ctx: discord.Interaction):
+    if not _is_mistium(ctx.user.id):
+        await send_message(ctx.response, "You do not have permission to use this command.", ephemeral=True)
+        return
+    
+    modal = StandingRecoverModal()
+    await ctx.response.send_modal(modal)
+
+
+@admin_standing.command(name='history', description='View a user\'s standing history (Admin only)')
+@app_commands.describe(username='The username to check')
+async def admin_standing_history(ctx: discord.Interaction, username: str):
+    if not _is_mistium(ctx.user.id):
+        await send_message(ctx.response, "You do not have permission to use this command.", ephemeral=True)
+        return
+    
+    username = username.strip().lower()
+    await ctx.response.defer(ephemeral=True)
+    
+    try:
+        status, data = await rotur.get_standing_history(username)
+        
+        if status != 200:
+            error_msg = data.get('error', 'User not found') if isinstance(data, dict) else 'Failed to fetch history'
+            await send_message(ctx.followup, f"Error: {error_msg}", ephemeral=True)
+            return
+        
+        current_standing = data.get('standing', 'good')
+        history = data.get('history', [])
+        
+        color_map = {
+            'good': discord.Color.green(),
+            'warning': discord.Color.yellow(),
+            'suspended': discord.Color.orange(),
+            'banned': discord.Color.red(),
+        }
+        
+        embed = discord.Embed(
+            title=f"Standing History for {username}",
+            description=f"**Current Level:** {current_standing.upper()}",
+            color=color_map.get(current_standing, discord.Color.blue())
+        )
+        
+        if not history:
+            embed.add_field(name="History", value="No standing changes recorded.", inline=False)
+        else:
+            history_text = []
+            for entry in history[-25:]:
+                level = entry.get('level', 'unknown')
+                reason = entry.get('reason', 'No reason')
+                timestamp = entry.get('timestamp', 0)
+                admin_id = entry.get('admin_id', 'system')
+                
+                if timestamp:
+                    dt = datetime.fromtimestamp(timestamp, timezone.utc)
+                    time_str = dt.strftime('%b %d, %Y %H:%M UTC')
+                else:
+                    time_str = 'Unknown'
+                
+                history_text.append(f"**[{time_str}]** {level.upper()}")
+                history_text.append(f"  Reason: {reason}")
+                history_text.append(f"  By: {admin_id}")
+                history_text.append("")
+            
+            if history_text:
+                embed.add_field(name=f"History ({len(history)} entries)", value="\n".join(history_text[:1000]), inline=False)
+        
+        footer_text = f"Showing {min(len(history), 25)} of {len(history)} entries" if len(history) > 25 else "Showing all entries"
+        embed.set_footer(text=footer_text)
+        await send_message(ctx.followup, embed=embed, ephemeral=True)
+        
+    except Exception as e:
+        await send_message(ctx.followup, f"Error fetching standing history: {str(e)}", ephemeral=True)
+
+
+@admin_standing.command(name='view', description='View a user\'s current standing (Admin only)')
+@app_commands.describe(username='The username to check')
+async def admin_standing_view(ctx: discord.Interaction, username: str):
+    if not _is_mistium(ctx.user.id):
+        await send_message(ctx.response, "You do not have permission to use this command.", ephemeral=True)
+        return
+    
+    username = username.strip().lower()
+    await ctx.response.defer(ephemeral=True)
+    
+    try:
+        status, data = await rotur.get_user_standing(username)
+        
+        if status != 200:
+            error_msg = data.get('error', 'User not found') if isinstance(data, dict) else 'Failed to fetch standing'
+            await send_message(ctx.followup, f"Error: {error_msg}", ephemeral=True)
+            return
+        
+        current_standing = data.get('standing', 'good')
+        recover_at = data.get('recover_at', 0)
+        history = data.get('history', [])
+        
+        color_map = {
+            'good': discord.Color.green(),
+            'warning': discord.Color.yellow(),
+            'suspended': discord.Color.orange(),
+            'banned': discord.Color.red(),
+        }
+        
+        embed = discord.Embed(
+            title=f"Standing for {username}",
+            description=f"**Current Level:** {current_standing.upper()}",
+            color=color_map.get(current_standing, discord.Color.blue())
+        )
+        
+        if recover_at and recover_at > 0:
+            recover_dt = datetime.fromtimestamp(recover_at, timezone.utc)
+            embed.add_field(name="Automatic Recovery", value=f"<t:{recover_at}:R>", inline=False)
+        elif current_standing != 'good':
+            embed.add_field(name="Automatic Recovery", value="No scheduled recovery", inline=False)
+        
+        if history:
+            latest = history[-1]
+            level = latest.get('level', 'unknown')
+            reason = latest.get('reason', 'No reason')
+            timestamp = latest.get('timestamp', 0)
+            
+            if timestamp:
+                dt = datetime.fromtimestamp(timestamp, timezone.utc)
+                time_str = dt.strftime('%b %d, %Y %H:%M UTC')
+            else:
+                time_str = 'Unknown'
+            
+            embed.add_field(name="Latest Change", value=f"{level.upper()} - {reason}\n{time_str}", inline=False)
+        
+        await send_message(ctx.followup, embed=embed, ephemeral=True)
+        
+    except Exception as e:
+        await send_message(ctx.followup, f"Error fetching standing: {str(e)}", ephemeral=True)
+
+
+@allowed_everywhere
+@tree.command(name='standing', description='View your current standing and history')
+async def user_standing(ctx: discord.Interaction):
+    await ctx.response.defer()
+    
+    username = await _get_username_from_discord(ctx.user.id)
+    if not username:
+        await send_message(ctx.followup, "You are not linked to a rotur account. Please link your account first.", ephemeral=True)
+        return
+    
+    try:
+        status, data = await rotur.get_user_standing(username)
+        if status != 200:
+            await send_message(ctx.followup, "Failed to fetch standing data. Please try again later.", ephemeral=True)
+            return
+        
+        current_standing = data.get('standing', 'good')
+        recover_at = data.get('recover_at', 0)
+        history = data.get('history', [])
+        
+        color_map = {
+            'good': discord.Color.green(),
+            'warning': discord.Color.yellow(),
+            'suspended': discord.Color.orange(),
+            'banned': discord.Color.red(),
+        }
+        
+        embed = discord.Embed(
+            title=f"Standing for {username}",
+            description=f"**Current Level:** {current_standing.upper()}",
+            color=color_map.get(current_standing, discord.Color.blue())
+        )
+        
+        if recover_at and recover_at > 0:
+            recover_dt = datetime.fromtimestamp(recover_at, timezone.utc)
+            embed.add_field(name="Automatic Recovery", value=f"<t:{recover_at}:R>", inline=False)
+        elif current_standing != 'good':
+            embed.add_field(name="Automatic Recovery", value="No scheduled recovery", inline=False)
+        
+        if history:
+            history_text = []
+            for entry in history[-10:]:
+                level = entry.get('level', 'unknown')
+                reason = entry.get('reason', 'No reason')
+                timestamp = entry.get('timestamp', 0)
+                admin_id = entry.get('admin_id', 'system')
+                
+                if timestamp:
+                    dt = datetime.fromtimestamp(timestamp, timezone.utc)
+                    time_str = dt.strftime('%b %d, %Y %H:%M')
+                else:
+                    time_str = 'Unknown'
+                
+                history_text.append(f"• **{level.upper()}** - {reason} ({time_str})")
+            
+            if history_text:
+                embed.add_field(name=f"Recent History ({len(history_text)} entries)", value="\n".join(history_text), inline=False)
+        
+        embed.set_footer(text="Standing affects your ability to use certain features.")
+        await send_message(ctx.followup, embed=embed)
+        
+    except Exception as e:
+        await send_message(ctx.followup, f"Error fetching standing: {str(e)}", ephemeral=True)
+
 
 @allowed_everywhere
 @tree.command(name='purge', description='[Mistium only] Delete a number of recent messages from this channel')

@@ -527,3 +527,47 @@ async def close():
     global _session
     if _session:
         await _session.close()
+
+
+async def set_standing(username: str, level: str, reason: str) -> tuple[int, Any]:
+    session = await get_session()
+    payload = {
+        "username": username,
+        "level": level,
+        "reason": reason,
+    }
+    async with session.post(
+        f"{get_base_url()}/admin/set_standing",
+        json=payload,
+        headers=ADMIN_HEADERS,
+    ) as resp:
+        return resp.status, await resp.json()
+
+
+async def get_standing_history(username: str) -> tuple[int, Any]:
+    session = await get_session()
+    payload = {"username": username}
+    async with session.post(
+        f"{get_base_url()}/admin/get_standing_history",
+        json=payload,
+        headers=ADMIN_HEADERS,
+    ) as resp:
+        return resp.status, await resp.json()
+
+
+async def recover_standing(username: str, reason: str) -> tuple[int, Any]:
+    session = await get_session()
+    payload = {
+        "username": username,
+        "reason": reason,
+    }
+    async with session.post(
+        f"{get_base_url()}/admin/recover_standing",
+        json=payload,
+        headers=ADMIN_HEADERS,
+    ) as resp:
+        return resp.status, await resp.json()
+
+
+async def get_user_standing(username: str) -> tuple[int, Any]:
+    return await api_json("GET", "/get_standing", params={"username": username})
