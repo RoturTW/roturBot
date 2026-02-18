@@ -39,18 +39,18 @@ async def query(spl, channel, user, dir):
                 "!roturacc [name] delete",
                 "!roturacc [name] ban",
                 "!roturacc [name] refresh_token",
-                "!roturacc <username> set_standing <level> <reason>",
-                "!roturacc <username> recover_standing <reason>",
-                "!roturacc <username> standing_history",
+                "!roturacc [name] set_standing <level> <reason>",
+                "!roturacc [name] recover_standing <reason>",
+                "!roturacc [name] standing_history",
                 "Mistium only:",
                 "!roturacc [system] get_users",
                 "!roturacc [name] token",
                 "!roturacc [name] sub <tier>",
                 "!roturacc banned_words",
-                "!roturacc <word> ban_word",
-                "!roturacc <word> unban_word",
-                "!roturacc <username> add_badge <badge>",
-                "!roturacc <username> remove_badge <badge>"
+                "!roturacc [name] ban_word",
+                "!roturacc [name] unban_word",
+                "!roturacc [name] add_badge <badge>",
+                "!roturacc [name] remove_badge <badge>"
             ]
             await channel.send("\n".join(lines))
             return
