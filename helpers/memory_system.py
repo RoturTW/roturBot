@@ -214,7 +214,7 @@ class MemorySystem:
         results = []
         
         # Use rapidfuzz for fast fuzzy matching
-        memory_contents = [(m, m['content']) for m in active_memories]
+        memory_contents = [m['content'] for m in active_memories]
         if not process or not memory_contents:
             return []
     
@@ -227,8 +227,9 @@ class MemorySystem:
         
         for match, score, _ in matches:
             if score >= 60:  # Minimum fuzzy match threshold
-                memory = match[0]
-                results.append((memory, score / 100))
+                memory = next((m for m in active_memories if m['content'] == match), None)
+                if memory:
+                    results.append((memory, score / 100))
         
         # If fuzzy search didn't find enough results, try semantic search
         if len(results) < 3 and use_semantic:
