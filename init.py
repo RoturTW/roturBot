@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands, ui
 from dotenv import load_dotenv
-from .commands import stats, roturacc, counting, group
+from .commands import stats, roturacc, counting, group, ai
 from .helpers import rotur
 from .helpers.quote_generator import quote_generator
 from .helpers import icn
@@ -683,6 +683,7 @@ requests_group = app_commands.allowed_installs(guilds=True, users=True)(requests
 requests_group = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(requests_group)
 tree.add_command(requests_group)
 tree.add_command(group.group_cmds)
+tree.add_command(ai.ai_command)
 
 
 def _chunk_lines(lines: list[str], chunk_size: int = 20) -> list[str]:
@@ -3113,7 +3114,6 @@ async def on_message(message):
                 await message.delete()
             except Exception:
                 pass
-            await handle_ai_query(message, "please respond to the ongoing conversation context.", reply=False)
             return
 
         if is_reply_to_bot and not prompt:
@@ -3516,44 +3516,6 @@ def parseMessages(messages: list) -> str:
 
         lines.append(content_line)
     return "\n".join(lines)
-
-async def classify_query_complexity(prompt: str) -> str:
-    nvidia_client = AsyncOpenAI(
-        base_url="https://integrate.api.nvidia.com/v1",
-        api_key=os.getenv("NVIDIA_API_KEY", "")
-    )
-
-    return "complex"
-    
-    try:
-        response = await nvidia_client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Classify this Discord message as 'simple' or 'complex'.\n\n"
-                        "Return 'complex' if the message requires: writing/debugging code, "
-                        "multi-step research, detailed analysis, complex math, or multiple tool calls.\n\n"
-                        "Return 'simple' for everything else.\n\n"
-                        "Respond ONLY with JSON: {\"complexity\": \"simple\"} or {\"complexity\": \"complex\"}"
-                    )
-                },
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=20,
-            temperature=0
-        )
-        raw = response.choices[0].message.content or ""
-        raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        print(f"[router] '{prompt[:60]}' → {raw}")
-        data = json.loads(raw)
-        complexity = data.get("complexity", "simple")
-        print(f"[router] '{prompt[:60]}' → {complexity}")
-        return complexity
-    except Exception as e:
-        print(f"[router] classifier failed ({e}), defaulting to simple")
-        return "simple"
 
 MAX_RESPONSE_CHARS = 50000
 
@@ -4590,9 +4552,8 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
 
     messages.append({"role": "user", "content": user_prompt})
 
-    complexity = await classify_query_complexity(user_prompt)
-
-    resp = await query_nvidia(messages, my_msg, complexity, message)
+    thinking_start_time = datetime.now()
+    resp = await query_nvidia(messages, my_msg, message, thinking_start_time)
     
     if not isinstance(resp, dict):
         await my_msg.edit(content=catify("Sorry, I encountered an error processing your request."))
@@ -4625,25 +4586,29 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
 
     return True
 
-async def query_nvidia(messages: list, my_msg: discord.Message, complexity: str, user_message: discord.Message | None = None) -> dict:
+def format_thinking_time(start_time: datetime) -> str:
+    """Format thinking time as a compact indicator."""
+    elapsed = (datetime.now() - start_time).total_seconds()
+    if elapsed < 1:
+        return f"{int(elapsed * 1000)}ms"
+    return f"{elapsed:.1f}s"
+
+async def query_nvidia(messages: list, my_msg: discord.Message, user_message: discord.Message | None = None, thinking_start_time: datetime | None = None) -> dict:
     """Call NVIDIA chat API with reasoning support."""
     load_dotenv(override=True)
     api_key = os.getenv("NVIDIA_API_KEY", "")
-    
+
     nvidia_client = AsyncOpenAI(
         base_url="https://integrate.api.nvidia.com/v1",
         api_key=api_key
     )
 
-    model = "z-ai/glm4.7" if complexity == "complex" else "openai/gpt-oss-120b"
+    model = "z-ai/glm4.7"
     extra_body = (
         {"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}}
-        if complexity == "complex" else {}
     )
 
     try:
-        await my_msg.edit(content="Thinking...")
-        
         response = await nvidia_client.chat.completions.create(
             model=model,
             messages=messages,
@@ -4653,10 +4618,23 @@ async def query_nvidia(messages: list, my_msg: discord.Message, complexity: str,
             tools=tools,
             extra_body=extra_body
         )
-        
+
         message = response.choices[0].message
         full_content = message.content or ""
         full_reasoning = getattr(message, "reasoning_content", None)
+
+        # Update status to show first 200 chars of reasoning if available
+        if full_reasoning and isinstance(full_reasoning, str) and full_reasoning.strip():
+            status_msg = full_reasoning.strip()[:200]
+            if len(full_reasoning) > 200:
+                status_msg += "..."
+            if thinking_start_time:
+                time_indicator = format_thinking_time(thinking_start_time)
+                status_msg = f"`[{time_indicator}]` {status_msg}"
+            try:
+                await my_msg.edit(content=status_msg)
+            except Exception:
+                pass
 
         if "<tool_call" in full_content or "<toolCall" in full_content or "<tool-call" in full_content:
             messages.append({"role": "assistant", "content": full_content})
@@ -4664,7 +4642,7 @@ async def query_nvidia(messages: list, my_msg: discord.Message, complexity: str,
                 "role": "system",
                 "content": "ERROR: XML format is not supported for tool calls. You must use JSON format for all tool invocations. Please use the function_call syntax provided in the tools schema, not XML tags like <tool_call>."
             })
-            return await query_nvidia(messages, my_msg, complexity, user_message)
+            return await query_nvidia(messages, my_msg, user_message, thinking_start_time)
 
         tool_calls = getattr(message, 'tool_calls', None)
         if tool_calls:
@@ -4743,7 +4721,11 @@ async def query_nvidia(messages: list, my_msg: discord.Message, complexity: str,
                     tool_display = f'finding a GIF for: "{args["query"]}"'
 
                 try:
-                    await my_msg.edit(content=f'Calling {tool_display}')
+                    tool_status = f'Calling {tool_display}'
+                    if thinking_start_time:
+                        time_indicator = format_thinking_time(thinking_start_time)
+                        tool_status = f"`[{time_indicator}]` {tool_status}"
+                    await my_msg.edit(content=tool_status)
                 except Exception:
                     pass
 
@@ -4762,12 +4744,20 @@ async def query_nvidia(messages: list, my_msg: discord.Message, complexity: str,
                     "content": tool_result
                 })
 
+            # Try to display reasoning from the previous response if available
             try:
-                await my_msg.edit(content="Thinking...")
+                if full_reasoning and isinstance(full_reasoning, str) and full_reasoning.strip():
+                    status_msg = full_reasoning.split("\n")[0].strip()[:200]
+                    if len(full_reasoning) > 200:
+                        status_msg += "..."
+                    if thinking_start_time:
+                        time_indicator = format_thinking_time(thinking_start_time)
+                        status_msg = f"`[{time_indicator}]` {status_msg}"
+                    await my_msg.edit(content=status_msg)
             except Exception:
                 pass
 
-            return await query_nvidia(messages, my_msg, complexity, user_message)
+            return await query_nvidia(messages, my_msg, user_message, thinking_start_time)
         
         return {
             "choices": [{
