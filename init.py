@@ -2714,6 +2714,9 @@ async def on_message(message):
     if await counting.handle_counting_message(message, message.channel):
         return
 
+    spl = message.content.split(" ")
+    channel = message.channel
+
     is_mentioned = bool(client.user and f"<@{client.user.id}>" in message.content)
 
     is_reply = message.reference is not None
@@ -2726,7 +2729,9 @@ async def on_message(message):
         and message.reference.resolved.author.id == client.user.id
     )
 
-    if (is_mentioned or is_reply_ping) or (message.guild is None and not message.author.bot):
+    KNOWN_COMMANDS = {'!stats', '?link', '!cat_mode', '!send', '!roturacc'}
+
+    if (is_mentioned or is_reply_ping) or (message.guild is None and not message.author.bot and spl[0] not in KNOWN_COMMANDS):
         print(f"\033[94m[+] AI Mention from {message.author.name}\033[0m")
         prompt = re.sub(r"<@[0-9]+>", "", message.content).strip()
 
@@ -2786,9 +2791,6 @@ async def on_message(message):
         return
 
     print(f"\033[94m[+] Discord Message\033[0m | {message.author.name}: {message.content}")
-
-    spl = message.content.split(" ")
-    channel = message.channel
 
     match spl[0]:
         case '!stats':
