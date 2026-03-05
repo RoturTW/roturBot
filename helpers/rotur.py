@@ -220,30 +220,6 @@ async def transfer(auth: str, to: str, amount: float, note: str = "") -> tuple[i
     )
 
 
-async def marriage_propose(auth: str, username: str) -> tuple[int, Any]:
-    return await api_json("POST", f"/marriage/propose/{username}", params={"auth": auth}, timeout_total=10)
-
-
-async def marriage_accept(auth: str) -> tuple[int, Any]:
-    return await api_json("POST", "/marriage/accept", params={"auth": auth}, timeout_total=10)
-
-
-async def marriage_reject(auth: str) -> tuple[int, Any]:
-    return await api_json("POST", "/marriage/reject", params={"auth": auth}, timeout_total=10)
-
-
-async def marriage_cancel(auth: str) -> tuple[int, Any]:
-    return await api_json("POST", "/marriage/cancel", params={"auth": auth}, timeout_total=10)
-
-
-async def marriage_divorce(auth: str) -> tuple[int, Any]:
-    return await api_json("POST", "/marriage/divorce", params={"auth": auth}, timeout_total=10)
-
-
-async def marriage_status(auth: str) -> tuple[int, Any]:
-    return await api_json("GET", "/marriage/status", params={"auth": auth}, timeout_total=10)
-
-
 async def search_posts(query: str, limit: int = 20) -> tuple[int, Any]:
     return await api_json("GET", "/search_posts", params={"limit": int(limit), "q": query})
 

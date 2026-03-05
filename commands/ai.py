@@ -4,6 +4,7 @@ from ..shared import allowed_everywhere, send_message, catify
 from ..helpers import rotur
 from openai import AsyncOpenAI
 import os
+import asyncio
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 import json
@@ -67,7 +68,9 @@ async def ai_command(ctx: discord.Interaction, prompt: str):
         await send_message(ctx.followup, "You are not linked to a rotur account and cannot use this feature.")
         return
 
-    if rotur_user.get('sys.subscription', {}).get('tier', "Free") == "Free":
+    subscription_tier = rotur_user.get('sys.subscription', {}).get('tier', "Free")
+    
+    if subscription_tier == "Free":
         await send_message(ctx.followup, "Only subscribers can use this feature. Subscribe at https://ko-fi.com/mistium or use the /subscribe command to get lite (15 credits per month)")
         return
     
@@ -90,15 +93,24 @@ async def ai_command(ctx: discord.Interaction, prompt: str):
     api_key = os.getenv("NVIDIA_API_KEY", "")
     
     try:
-        nvidia_client = AsyncOpenAI(
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key=api_key
-        )
-
-        model = "z-ai/glm4.7"
-        extra_body = {
-            "chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}
-        }
+        await send_message(ctx.followup, "waiting for nvidia...")
+        
+        if subscription_tier == "Lite":
+            nvidia_client = AsyncOpenAI(
+                base_url="https://integrate.api.nvidia.com/v1",
+                api_key=api_key
+            )
+            model = "gpt-oss-120b"
+            extra_body = {}
+        else:
+            nvidia_client = AsyncOpenAI(
+                base_url="https://integrate.api.nvidia.com/v1",
+                api_key=api_key
+            )
+            model = "z-ai/glm4.7"
+            extra_body = {
+                "chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}
+            }
 
         response = await nvidia_client.chat.completions.create(
             model=model,
@@ -108,8 +120,17 @@ async def ai_command(ctx: discord.Interaction, prompt: str):
             max_tokens=4096,
             extra_body=extra_body
         )
+        
+        # Update to thinking when response comes in
+        try:
+            await send_message(ctx.followup, "thinking")
+        except Exception:
+            pass
 
         content = response.choices[0].message.content or ""
+
+        if subscription_tier == "Lite" and content and content.strip():
+            content = "[Lite - gpt-oss-120b] " + content
 
         if not content or content.strip() == "":
             content = "Sorry, I couldn't generate a response to that."

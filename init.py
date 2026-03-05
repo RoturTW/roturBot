@@ -23,6 +23,9 @@ import asyncio, psutil, threading
 from .helpers import reactionStorage
 from .helpers.memory_system import MemorySystem
 from .helpers.python_sandbox import run_sandbox
+from .helpers.rules_system import rules_system
+from .helpers.relationship_system import relationship_system
+from .helpers.emotional_state import emotional_state_system
 
 from sympy import sympify
 import base64, hashlib, subprocess
@@ -52,8 +55,8 @@ nvidia_token = str(os.getenv('NVIDIA_API_KEY'))
 avatars_api_base = str(os.getenv('AVATARS_BASE_URL', 'https://avatars.rotur.dev'))
 BOT_OWNER_ID = int(os.getenv('BOT_OWNER_ID', 603952506330021898))
 
-tools = open(os.path.join(_MODULE_DIR, "static", "tools.json"), "r")
-tools = json.load(tools)
+with open(os.path.join(_MODULE_DIR, "static", "tools.json"), "r") as f:
+    tools = json.load(f)
 
 with open(os.path.join(_MODULE_DIR, "static", "history.json"), "r") as history_file:
     history = json.load(history_file)
@@ -96,6 +99,7 @@ class MessageCache:
                 "content": message.content,
                 "timestamp": message.created_at.isoformat(),
                 "reactions": reactions,
+                "attachment_urls": [att.url for att in message.attachments if att.content_type and att.content_type.startswith("image/")],
             }
 
             channel_cache.append(msg_dict)
@@ -131,6 +135,10 @@ class MessageCache:
         for msg in messages[-40:]:
             author_id = msg.get('author_id', 'unknown')
             base = f"[msg_id:{msg['id']}] {msg['author']} (discord_id:{author_id}): {msg['content']}"
+
+            attachment_urls = msg.get('attachment_urls', [])
+            if attachment_urls:
+                base += f" [Images: {', '.join(attachment_urls)}]"
 
             reactions = msg.get('reactions', [])
             if reactions:
@@ -1652,12 +1660,6 @@ async def unsubscribe(ctx: discord.Interaction):
     except Exception as e:
         await send_message(ctx.response, f"Error unsubscribing from Lite: {str(e)}", ephemeral=True)
 
-# Marriage Commands Group
-marriage = app_commands.Group(name='marriage', description='Commands related to rotur marriage system')
-marriage = app_commands.allowed_installs(guilds=True, users=True)(marriage)
-marriage = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(marriage)
-tree.add_command(marriage)
-
 @tree.command(name='blocked', description='View users you are blocking')
 async def blocked(ctx: discord.Interaction):
     user = await rotur.get_user_by('discord_id', str(ctx.user.id))
@@ -1704,356 +1706,6 @@ async def unblock(ctx: discord.Interaction, username: str):
         await send_message(ctx.response, await rotur.unblock_user(token, username))
     except Exception as e:
         await send_message(ctx.response, f"Error unblocking user: {str(e)}", ephemeral=True)
-
-@allowed_everywhere
-@marriage.command(name='propose', description='Propose marriage to another rotur user')
-@app_commands.describe(username='Username of the person you want to propose to')
-async def marriage_propose(ctx: discord.Interaction, username: str):
-    # Get user's rotur account
-    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
-    if user_data is None or user_data.get('error') == "User not found":
-        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
-        return
-    
-    auth_key = user_data.get('key')
-    if not auth_key:
-        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
-        return
-    
-    # Get target user's rotur account to find their Discord ID
-    target_user_data = await rotur.get_user_by('username', username)
-    if target_user_data is None or target_user_data.get('error') == "User not found":
-        await send_message(ctx.response, f'User **{username}** not found on rotur.', ephemeral=True)
-        return
-    
-    target_discord_id = target_user_data.get('discord_id')
-    if not target_discord_id:
-        await send_message(ctx.response, f'User **{username}** is not linked to a Discord account.', ephemeral=True)
-        return
-    
-    try:
-        # Send proposal request
-        status, result = await rotur.marriage_propose(auth_key, username)
-
-        if status == 200:
-            # Create buttons for accept/reject that only the target user can use
-            view = ProposalView(target_discord_id, user_data.get('username'), username)
-            
-            # Send embed with buttons to the channel
-            embed = discord.Embed(
-                title="💍 Marriage Proposal!",
-                description=f"**{user_data.get('username')}** has proposed to **{username}**! What do you say?",
-                color=discord.Color.pink()
-            )
-            embed.add_field(
-                name="Note", 
-                value=f"Only **{username}** can respond to this proposal.",
-                inline=False
-            )
-            
-            await send_message(ctx.response, embed=embed, view=view)
-        else:
-            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
-            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
-    except Exception as e:
-        await send_message(ctx.response, f"Error sending proposal: {str(e)}", ephemeral=True)
-
-class ProposalView(discord.ui.View):
-    def __init__(self, target_discord_id: str, proposer_username: str, target_username: str):
-        super().__init__(timeout=300)  # 5 minute timeout
-        self.target_discord_id = target_discord_id
-        self.proposer_username = proposer_username
-        self.target_username = target_username
-    
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # Only allow the target user to interact with the buttons
-        if str(interaction.user.id) != self.target_discord_id:
-            await interaction.response.send_message("These buttons are not for you!", ephemeral=True)
-            return False
-        return True
-    
-    @discord.ui.button(label='Accept 💕', style=discord.ButtonStyle.green)
-    async def accept_proposal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Get user's auth key
-        user_data = await rotur.get_user_by('discord_id', str(interaction.user.id))
-        if user_data is None or user_data.get('error') == "User not found":
-            await interaction.response.send_message('You are not linked to a rotur account.', ephemeral=True)
-            return
-        
-        auth_key = user_data.get('key')
-        if not auth_key:
-            await interaction.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
-            return
-        
-        try:
-            status, result = await rotur.marriage_accept(auth_key)
-
-            if status == 200:
-                embed = discord.Embed(
-                    title="💕 Marriage Accepted!",
-                    description=f"Congratulations! You and **{self.proposer_username}** are now married!",
-                    color=discord.Color.green()
-                )
-                await interaction.response.edit_message(embed=embed, view=None)
-                
-                # Try to notify the proposer
-                try:
-                    proposer_data = await rotur.get_user_by('username', self.proposer_username)
-                    if proposer_data and proposer_data.get('discord_id'):
-                        proposer_user = await client.fetch_user(int(proposer_data.get('discord_id')))
-                        if proposer_user:
-                            notification_embed = discord.Embed(
-                                title="💕 Proposal Accepted!",
-                                description=f"**{self.target_username}** accepted your marriage proposal! Congratulations!",
-                                color=discord.Color.green()
-                            )
-                            await proposer_user.send(embed=notification_embed)
-                except:
-                    pass  # Ignore if we can't notify
-            else:
-                err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
-                await interaction.response.send_message(f"Error: {err}", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f"Error accepting proposal: {str(e)}", ephemeral=True)
-    
-    @discord.ui.button(label='Reject 💔', style=discord.ButtonStyle.red)
-    async def reject_proposal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Get user's auth key
-        user_data = await rotur.get_user_by('discord_id', str(interaction.user.id))
-        if user_data is None or user_data.get('error') == "User not found":
-            await interaction.response.send_message('You are not linked to a rotur account.', ephemeral=True)
-            return
-        
-        auth_key = user_data.get('key')
-        if not auth_key:
-            await interaction.response.send_message('Could not retrieve your authentication key.', ephemeral=True)
-            return
-        
-        try:
-            status, result = await rotur.marriage_reject(auth_key)
-
-            if status == 200:
-                embed = discord.Embed(
-                    title="💔 Marriage Proposal Rejected",
-                    description=f"You have rejected **{self.proposer_username}**'s marriage proposal.",
-                    color=discord.Color.red()
-                )
-                await interaction.response.edit_message(embed=embed, view=None)
-                
-                # Try to notify the proposer
-                try:
-                    proposer_data = await rotur.get_user_by('username', self.proposer_username)
-                    if proposer_data and proposer_data.get('discord_id'):
-                        proposer_user = await client.fetch_user(int(proposer_data.get('discord_id')))
-                        if proposer_user:
-                            notification_embed = discord.Embed(
-                                title="💔 Proposal Rejected",
-                                description=f"**{self.target_username}** rejected your marriage proposal.",
-                                color=discord.Color.red()
-                            )
-                            await proposer_user.send(embed=notification_embed)
-                except:
-                    pass  # Ignore if we can't notify
-            else:
-                err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
-                await interaction.response.send_message(f"Error: {err}", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f"Error rejecting proposal: {str(e)}", ephemeral=True)
-    
-    async def on_timeout(self):
-        # Disable all buttons when view times out
-        for item in self.children:
-            try:
-                setattr(item, "disabled", True)
-            except Exception:
-                # If the item doesn't support being disabled, ignore it
-                continue
-
-@allowed_everywhere
-@marriage.command(name='accept', description='Accept your pending marriage proposal')
-async def marriage_accept(ctx: discord.Interaction):
-    # Get user's rotur account
-    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
-    if user_data is None or user_data.get('error') == "User not found":
-        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
-        return
-    
-    auth_key = user_data.get('key')
-    if not auth_key:
-        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
-        return
-    
-    try:
-        # Accept proposal
-        status, result = await rotur.marriage_accept(auth_key)
-
-        if status == 200:
-            embed = discord.Embed(
-                title="💕 Marriage Accepted!",
-                description=f"Congratulations! You and **{result.get('partner')}** are now married!",
-                color=discord.Color.green()
-            )
-            await ctx.response.edit_message(embed=embed, view=None)
-        else:
-            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
-            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
-    except Exception as e:
-        await send_message(ctx.response, f"Error accepting proposal: {str(e)}", ephemeral=True)
-
-@allowed_everywhere
-@marriage.command(name='reject', description='Reject your pending marriage proposal')
-async def marriage_reject(ctx: discord.Interaction):
-    # Get user's rotur account
-    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
-    if user_data is None or user_data.get('error') == "User not found":
-        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
-        return
-    
-    auth_key = user_data.get('key')
-    if not auth_key:
-        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
-        return
-    
-    try:
-        # Reject proposal
-        status, result = await rotur.marriage_reject(auth_key)
-
-        if status == 200:
-            embed = discord.Embed(
-                title="💔 Marriage Proposal Rejected",
-                description=f"You have rejected **{result.get('proposer')}**'s marriage proposal.",
-                color=discord.Color.red()
-            )
-            await ctx.response.edit_message(embed=embed, view=None)
-        else:
-            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
-            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
-    except Exception as e:
-        await send_message(ctx.response, f"Error rejecting proposal: {str(e)}", ephemeral=True)
-
-@allowed_everywhere
-@marriage.command(name='cancel', description='Cancel your pending marriage proposal')
-async def marriage_cancel(ctx: discord.Interaction):
-    # Get user's rotur account
-    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
-    if user_data is None or user_data.get('error') == "User not found":
-        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
-        return
-    
-    auth_key = user_data.get('key')
-    if not auth_key:
-        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
-        return
-    
-    try:
-        # Cancel proposal
-        status, result = await rotur.marriage_cancel(auth_key)
-
-        if status == 200:
-            embed = discord.Embed(
-                title="Proposal Cancelled",
-                description="You have cancelled your marriage proposal.",
-                color=discord.Color.orange()
-            )
-            await send_message(ctx.response, embed=embed)
-        else:
-            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
-            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
-    except Exception as e:
-        await send_message(ctx.response, f"Error cancelling proposal: {str(e)}", ephemeral=True)
-
-@allowed_everywhere
-@marriage.command(name='divorce', description='Divorce your current spouse')
-async def marriage_divorce(ctx: discord.Interaction):
-    # Get user's rotur account
-    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
-    if user_data is None or user_data.get('error') == "User not found":
-        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
-        return
-    
-    auth_key = user_data.get('key')
-    if not auth_key:
-        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
-        return
-    
-    try:
-        # Divorce request
-        status, result = await rotur.marriage_divorce(auth_key)
-
-        if status == 200:
-            embed = discord.Embed(
-                title="💔 Divorce Processed",
-                description="You are now divorced.",
-                color=discord.Color.orange()
-            )
-            await send_message(ctx.response, embed=embed)
-        else:
-            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
-            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
-    except Exception as e:
-        await send_message(ctx.response, f"Error processing divorce: {str(e)}", ephemeral=True)
-
-@allowed_everywhere
-@marriage.command(name='status', description='Check your marriage status')
-async def marriage_status(ctx: discord.Interaction):
-    # Get user's rotur account
-    user_data = await rotur.get_user_by('discord_id', str(ctx.user.id))
-    if user_data is None or user_data.get('error') == "User not found":
-        await send_message(ctx.response, 'You are not linked to a rotur account. Please link your account using `/link` command.', ephemeral=True)
-        return
-    
-    auth_key = user_data.get('key')
-    if not auth_key:
-        await send_message(ctx.response, 'Could not retrieve your authentication key.', ephemeral=True)
-        return
-    
-    try:
-        # Get marriage status
-        status, result = await rotur.marriage_status(auth_key)
-
-        if status == 200 and isinstance(result, dict):
-            status = result.get('status', 'single')
-            partner = result.get('partner', '')
-            
-            if status == 'single':
-                embed = discord.Embed(
-                    title="💔 Single",
-                    description="You are currently single and available for marriage.",
-                    color=discord.Color.blue()
-                )
-            elif status == 'proposed':
-                proposer = result.get('proposer', '')
-                if user_data.get('username') == proposer:
-                    embed = discord.Embed(
-                        title="💍 Proposal Sent",
-                        description=f"You have sent a marriage proposal to **{partner}**. Waiting for their response.",
-                        color=discord.Color.yellow()
-                    )
-                else:
-                    embed = discord.Embed(
-                        title="💍 Proposal Received",
-                        description=f"**{partner}** has proposed to you! Check your DMs for buttons to accept or reject.",
-                        color=discord.Color.yellow()
-                    )
-            elif status == 'married':
-                embed = discord.Embed(
-                    title="💕 Married",
-                    description=f"You are married to **{partner}**!",
-                    color=discord.Color.pink()
-                )
-            else:
-                embed = discord.Embed(
-                    title="❓ Unknown Status",
-                    description=f"Marriage status: {status}",
-                    color=discord.Color.greyple()
-                )
-            
-            await send_message(ctx.response, embed=embed)
-        else:
-            err = result.get('error', 'Unknown error') if isinstance(result, dict) else 'Unknown error'
-            await send_message(ctx.response, f"Error: {err}", ephemeral=True)
-    except Exception as e:
-        await send_message(ctx.response, f"Error checking marriage status: {str(e)}", ephemeral=True)
 
 @tree.command(name='here', description='Ping people in your thread')
 async def here(ctx: discord.Interaction):
@@ -3064,20 +2716,21 @@ async def on_message(message):
 
     is_mentioned = bool(client.user and f"<@{client.user.id}>" in message.content)
 
-    is_reply_to_bot = False
-    if message.reference and message.reference.message_id and not message.author.bot:
-        try:
-            referenced_message = await message.channel.fetch_message(message.reference.message_id)
-            if referenced_message.author == client.user:
-                is_reply_to_bot = True
-        except Exception:
-            pass
+    is_reply = message.reference is not None
 
-    if is_mentioned or is_reply_to_bot:
+    is_reply_ping = (
+        message.reference is not None
+        and message.reference.resolved is not None
+        and message.reference.resolved.author in message.mentions
+        and client.user
+        and message.reference.resolved.author.id == client.user.id
+    )
+
+    if (is_mentioned or is_reply_ping) or (message.guild is None and not message.author.bot):
         print(f"\033[94m[+] AI Mention from {message.author.name}\033[0m")
         prompt = re.sub(r"<@[0-9]+>", "", message.content).strip()
 
-        if message.reference and message.reference.message_id and not message.author.bot and not is_reply_to_bot:
+        if message.reference and message.reference.message_id and not message.author.bot and not is_reply_ping:
             try:
                 referenced_message = await message.channel.fetch_message(message.reference.message_id)
 
@@ -3104,22 +2757,31 @@ async def on_message(message):
             except Exception as e:
                 print(f"Error processing reply: {e}")
 
-        if is_reply_to_bot:
-            words = prompt.split()
-            if len(words) == 1 and '?' not in prompt:
-                return
-
-        if not prompt and not is_reply_to_bot:
+        if not prompt and not is_reply_ping:
             try:
                 await message.delete()
             except Exception:
                 pass
             return
 
-        if is_reply_to_bot and not prompt:
+        if is_reply_ping and not prompt:
             await handle_ai_query(message, "please respond to the ongoing conversation context.", reply=False)
             return
 
+        # If replying to bot with content, include the bot's previous message as context
+        if is_reply_ping and prompt:
+            try:
+                referenced_message = await message.channel.fetch_message(message.reference.message_id)
+                context_message = referenced_message.content or ""
+                await handle_ai_query(message, prompt, context_message)
+                return
+            except Exception:
+                pass
+
+        if message.guild is None and not message.author.bot:
+            await handle_ai_query(message, prompt, context_message=None, reply=False)
+            return
+        
         await handle_ai_query(message, prompt)
         return
 
@@ -4411,15 +4073,134 @@ async def call_tool(name: str, arguments: dict, my_msg: discord.Message | None =
                         import random
                         selected_gif = random.choice(gif_urls)
 
-                        # Format response with GIF and optional message
-                        response_content = selected_gif
-                        if message:
-                            response_content = f"{selected_gif}\n\n{message}"
-
-                        # Return special marker with the full content
-                        return f"__GIF_EXIT__:{response_content}"
+                        # Return special marker with the GIF URL and optional message separated by a different marker
+                        return f"__GIF_EXIT__:{selected_gif}|||GIF_SPLIT|||{message}"
                 except Exception as e:
                     return json.dumps({"error": f"Error searching for GIFs: {str(e)}"})
+
+            case "describe_image":
+                image_url = arguments.get("image_url", "")
+                if not image_url:
+                    return json.dumps({"error": "Missing required parameter: image_url"})
+                
+                try:
+                    async with session.get(image_url) as img_resp:
+                        if img_resp.status != 200:
+                            return json.dumps({"error": "Failed to download image"})
+                        
+                        content_type = img_resp.headers.get("Content-Type", "image/png")
+                        img_bytes = await img_resp.read()
+                    
+                    base64_image = base64.b64encode(img_bytes).decode('utf-8')
+                    data_url = f"data:{content_type};base64,{base64_image}"
+                    payload = {
+                        "image": data_url,
+                        "isUrl": False,
+                        "systemPrompt": "Describe the image in detail.",
+                        "userPrompt": "Describe this image.",
+                        "stream": False
+                    }
+                    
+                    async with session.post(
+                        "https://describeimage.ai/api/describe-image-ge",
+                        headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/json", "Origin": "https://describeimage.ai"},
+                        json=payload
+                    ) as api_resp:
+                        if api_resp.status == 200:
+                            res_json = await api_resp.json()
+                            description = res_json.get("result", "No description.").strip()
+                            return json.dumps({"success": True, "description": description})
+                        else:
+                            return json.dumps({"error": f"Image API returned status {api_resp.status}"})
+                except Exception as e:
+                    return json.dumps({"error": f"Error describing image: {str(e)}"})
+
+            case "calculate":
+                expression = arguments.get("expression", "")
+                variables = arguments.get("variables") or {}
+                
+                if not expression:
+                    return json.dumps({"error": "Missing required parameter: expression"})
+                
+                try:
+                    sympy_vars = {k: sympify(v) for k, v in variables.items()}
+                    result = sympify(expression, locals=sympy_vars).evalf()
+                    
+                    result_str = str(result)
+                    if result_str.endswith('.'):
+                        result_str = result_str[:-1]
+                    
+                    if len(result_str) > 100:
+                        result_str = result_str[:100] + "..."
+                    
+                    return json.dumps({"success": True, "expression": expression, "result": result_str})
+                except Exception as e:
+                    return json.dumps({"error": f"Error calculating expression: {str(e)}"})
+            
+            case "modify_rules":
+                modifications = arguments.get("modifications", [])
+                
+                if not modifications:
+                    return json.dumps({"error": "Missing required parameter: modifications"})
+                
+                try:
+                    result = rules_system.apply_modifications(modifications)
+                    
+                    return json.dumps({
+                        "success": result.get("success", True),
+                        "message": result.get("message", ""),
+                        "current_rules": result.get("result", [])
+                    })
+                except Exception as e:
+                    return json.dumps({"error": f"Error modifying rules: {str(e)}"})
+            
+            case "modify_relationship":
+                action = arguments.get("action", "")
+                user_id = arguments.get("user_id", "")
+                username = arguments.get("username", "")
+                thoughts = arguments.get("thoughts", "")
+                
+                if not action or not user_id or not username:
+                    return json.dumps({"error": "Missing required parameters: action, user_id, andusername are required"})
+                
+                try:
+                    result = relationship_system.modify_relationship(action, user_id, username, thoughts)
+                    
+                    return json.dumps({
+                        "success": result.get("success", True),
+                        "message": result.get("message", ""),
+                        "user_id": result.get("user_id", user_id),
+                        "username": result.get("username", username),
+                        "thoughts": result.get("thoughts", "")
+                    })
+                except Exception as e:
+                    return json.dumps({"error": f"Error modifying relationship: {str(e)}"})
+            
+            case "modify_emotional_state":
+                action = arguments.get("action", "")
+                state = arguments.get("state", "")
+                reason = arguments.get("reason", "")
+                
+                if not action:
+                    return json.dumps({"error": "Missing required parameter: action"})
+                
+                if action == "set" and (not state or not reason):
+                    return json.dumps({"error": "Missing required parameters for 'set': state and reason are required"})
+                
+                try:
+                    # Get guild_id from user_message (passed to call_tool)
+                    guild_id = str(user_message.guild.id) if user_message and user_message.guild else "global"
+                    
+                    result = emotional_state_system.modify_state(action, guild_id, state, reason)
+                    
+                    return json.dumps({
+                        "success": result.get("success", True),
+                        "message": result.get("message", ""),
+                        "state": result.get("state", ""),
+                        "reason": result.get("reason", "")
+                    })
+                except Exception as e:
+                    return json.dumps({"error": f"Error modifying emotional state: {str(e)}"})
 
         return ""
 
@@ -4485,16 +4266,19 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
     Handle AI query with user validation, message building, and response.
     Returns True if handled, False if validation failed.
     """
+    thinking_start_time = datetime.now()
     rotur_user = await rotur.get_user_by('discord_id', str(message.author.id))
     if rotur_user is None or rotur_user.get('error') is not None:
         await message.reply("You are not linked to a rotur account and cannot use this feature.")
         return False
 
-    if rotur_user.get('sys.subscription', {}).get('tier', "Free") == "Free":
+    subscription_tier = rotur_user.get('sys.subscription', {}).get('tier', "Free")
+    
+    if subscription_tier == "Free":
         await message.reply("Only subscribers can use this feature. Subscribe at https://ko-fi.com/mistium or use the /subscribe command to get lite (15 credits per month)")
         return False
 
-    my_msg = await message.reply("Thinking...") if reply else await message.channel.send("Thinking...")
+    my_msg = await message.reply("waiting for nvidia...") if reply else await message.channel.send("waiting for nvidia...")
 
     user_prompt = prompt
     if context_message:
@@ -4505,14 +4289,17 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
 
     user_personality = get_user_personality(message.author.id)
     personality_prompt = get_personality_prompt(user_personality)
-    personality_prompt = f"CURRENT TIME IS: {current_time_human} (ISO: {current_time})\n\n{personality_prompt}"
+    personality_prompt = f"it is currently {current_time_human} and I am located in the uk (ISO: {current_time})\n\n{personality_prompt}"
     tool_instructions = load_tool_instructions()
-
+    
+    from .helpers.emotional_state import get_formatted_emotional_state
+    guild_id = str(message.guild.id) if message.guild else "global"
+    emotional_state = get_formatted_emotional_state(guild_id)
+    
+    from .helpers.relationship_system import get_formatted_thoughts_for_user
+    relationship_thoughts = get_formatted_thoughts_for_user(str(message.author.id))
+    
     auto_skills_content = await get_automatic_skills(user_prompt)
-
-    # Automatically extract facts from user message
-    username = rotur_user.get('username', 'someone')
-    is_mention = f"<@{client.user.id}>" in message.content if client.user else False
 
     safe_user_data = {k: v for k, v in rotur_user.items() if k not in ['key', 'password']}
 
@@ -4523,6 +4310,12 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
         {"role": "system", "content": f"User object (safe fields only): {json.dumps(safe_user_data, indent=2)}"},
         {"role": "system", "content": f"Guild ID: {message.guild.id if message.guild else 'global'} - Use this guild_id for save_memory and search_memories tool calls."},
     ]
+    
+    if emotional_state:
+        messages.append({"role": "assistant", "content": emotional_state})
+    
+    if relationship_thoughts:
+        messages.append({"role": "assistant", "content": relationship_thoughts})
 
     channel_history = message_cache.get_message_history(message.channel.id)
     if channel_history:
@@ -4530,19 +4323,55 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
 
     # Proactive knowledge retrieval with improved query terms
     from .helpers.memory_system import memory_system
-    guild_id = str(message.guild.id) if message.guild else "global"
     
-    relevant_memories = memory_system.search_memories(
+    # Get user-specific memories for context about the person being talked to
+    user_tag = f"user:{rotur_user.get('username', message.author.name)}"
+    user_memories = memory_system.search_memories(
+        guild_id=guild_id,
+        query=user_tag,
+        tags_filter=[user_tag],
+        limit=10,
+        use_semantic=False
+    )
+    
+    # Get high-importance memories as contextual background
+    important_memories = memory_system.search_memories(
         guild_id=guild_id,
         query=prompt,
-        limit=5,  # Increased limit for better contextual awareness
+        min_importance=7,
+        limit=15,
         use_semantic=True
     )
-    if relevant_memories:
-        memory_content = "RELEVANT MEMORIES:\n\n" + "\n\n".join(
-            f"- {m['content']}" for m in relevant_memories
-        )
-        messages.append({"role": "system", "content": memory_content})
+    
+    # Combine all memories, removing duplicates
+    seen_ids = set()
+    all_memories = []
+    for mem_list in [user_memories, important_memories]:
+        for mem in mem_list:
+            if mem['id'] not in seen_ids:
+                seen_ids.add(mem['id'])
+                all_memories.append(mem)
+    
+    if all_memories:
+        # Separate into conscious and unconscious/contextual memories
+        user_context = [m for m in all_memories if any(t.startswith('user:') for t in m.get('tags', []))]
+        general_context = [m for m in all_memories if not any(t.startswith('user:') for t in m.get('tags', []))]
+        
+        memory_sections = []
+        
+        if user_context:
+            user_content = "ABOUT THIS USER:\n\n" + "\n\n".join(
+                f"- {m['content']}" for m in user_context[:5]
+            )
+            memory_sections.append(user_content)
+        
+        if general_context:
+            general_content = "RELEVANT CONTEXT & MEMORIES:\n\n" + "\n\n".join(
+                f"- {m['content']}" for m in general_context[:5]
+            )
+            memory_sections.append(general_content)
+        
+        messages.append({"role": "system", "content": "\n\n".join(memory_sections)})
 
     if auto_skills_content:
         messages.append({"role": "system", "content": auto_skills_content})
@@ -4553,7 +4382,7 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
     messages.append({"role": "user", "content": user_prompt})
 
     thinking_start_time = datetime.now()
-    resp = await query_nvidia(messages, my_msg, message, thinking_start_time)
+    resp = await query_nvidia(messages, my_msg, message, thinking_start_time, subscription_tier=subscription_tier)
     
     if not isinstance(resp, dict):
         await my_msg.edit(content=catify("Sorry, I encountered an error processing your request."))
@@ -4568,21 +4397,60 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
         return True
 
     content = resp.get("choices", [{}])[0].get("message", {}).get("content", "") if resp.get("choices") else ""
+    gif_message = resp.get("choices", [{}])[0].get("message", {}).get("gif_message", None) if resp.get("choices") else None
 
-    if not content or content.strip() == "":
-        content = "Sorry, I couldn't generate a response to that."
-
-    if "@everyone" in content or "@here" in content:
-        content = content.replace("@everyone", "@ everyone").replace("@here", "@ here")
+    if subscription_tier == "Lite" and content and content.strip():
+        content = "(Lite - gpt-oss-120b)\n" + content
 
     try:
-        # Don't catify gif_exit responses to preserve exact formatting
+        while True:
+            if not content or content.strip() == "":
+                content = "Sorry, I couldn't generate a response to that."
+
+            if "@everyone" in content or "@here" in content:
+                content = content.replace("@everyone", "@ everyone").replace("@here", "@ here")
+
+            final_content = content or ""
+            if finish_reason != "gif_exit":
+                cat_result = catify(content) if content else ""
+                final_content = cat_result if cat_result is not None else ""
+            
+            if final_content and len(final_content) > 2000:
+                await my_msg.edit(content="Response too long, asking model to shorten...")
+                messages.append({"role": "assistant", "content": content})
+                messages.append({
+                    "role": "system",
+                    "content": "ERROR: Your response was too long to send (exceeded 2000 characters). Please provide a shorter, more concise response to the user's request."
+                })
+                resp = await query_nvidia(messages, my_msg, message, thinking_start_time, subscription_tier=subscription_tier)
+                
+                if not isinstance(resp, dict):
+                    await my_msg.edit(content=catify("Sorry, I encountered an error processing your request."))
+                    return True
+                
+                finish_reason = resp.get("choices", [{}])[0].get("finish_reason", "") if resp.get("choices") else ""
+                
+                if finish_reason == "silent_exit":
+                    return True
+                
+                content = resp.get("choices", [{}])[0].get("message", {}).get("content", "") if resp.get("choices") else ""
+                gif_message = resp.get("choices", [{}])[0].get("message", {}).get("gif_message", None) if resp.get("choices") else None
+                continue
+            
+            break
+        
         if finish_reason == "gif_exit":
             await my_msg.edit(content=content)
+            if gif_message:
+                cat_result = catify(gif_message) if gif_message else ""
+                if cat_result:
+                    await message.channel.send(cat_result, reference=message, mention_author=False)
         else:
-            await my_msg.edit(content=catify(content))
+            await my_msg.edit(content=final_content)
     except discord.NotFound:
         return True
+    except Exception as e:
+        await message.edit(content=f"Error: {str(e)}")
 
     return True
 
@@ -4593,17 +4461,27 @@ def format_thinking_time(start_time: datetime) -> str:
         return f"{int(elapsed * 1000)}ms"
     return f"{elapsed:.1f}s"
 
-async def query_nvidia(messages: list, my_msg: discord.Message, user_message: discord.Message | None = None, thinking_start_time: datetime | None = None) -> dict:
+async def query_nvidia(messages: list, my_msg: discord.Message, user_message: discord.Message | None = None, thinking_start_time: datetime | None = None, retry_count: int = 0, is_first_call: bool = True, subscription_tier: str | None = None) -> dict:
     """Call NVIDIA chat API with reasoning support."""
     load_dotenv(override=True)
-    api_key = os.getenv("NVIDIA_API_KEY", "")
+
+    url = ""
+    api_key = ""
+
+    if subscription_tier == "Lite":
+        api_key = os.getenv("NVIDIA_API_KEY", "")
+        url = "https://integrate.api.nvidia.com/v1"
+        model = "openai/gpt-oss-120b"
+    else:
+        api_key = os.getenv("VERCEL_API_KEY", "")
+        url = "https://ai-gateway.vercel.sh/v1"
+        model = "zai/glm-4.7"
 
     nvidia_client = AsyncOpenAI(
-        base_url="https://integrate.api.nvidia.com/v1",
+        base_url=url,
         api_key=api_key
     )
 
-    model = "z-ai/glm4.7"
     extra_body = (
         {"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}}
     )
@@ -4636,13 +4514,13 @@ async def query_nvidia(messages: list, my_msg: discord.Message, user_message: di
             except Exception:
                 pass
 
-        if "<tool_call" in full_content or "<toolCall" in full_content or "<tool-call" in full_content:
+        if "</tool_call>" in full_content or "</toolCall>" in full_content or "</tool-call>" in full_content:
             messages.append({"role": "assistant", "content": full_content})
             messages.append({
                 "role": "system",
                 "content": "ERROR: XML format is not supported for tool calls. You must use JSON format for all tool invocations. Please use the function_call syntax provided in the tools schema, not XML tags like <tool_call>."
             })
-            return await query_nvidia(messages, my_msg, user_message, thinking_start_time)
+            return await query_nvidia(messages, my_msg, user_message, thinking_start_time, subscription_tier=subscription_tier)
 
         tool_calls = getattr(message, 'tool_calls', None)
         if tool_calls:
@@ -4735,8 +4613,11 @@ async def query_nvidia(messages: list, my_msg: discord.Message, user_message: di
                     return {"choices": [{"message": {"content": "", "finish_reason": "silent_exit"}}]}
 
                 if tool_result.startswith("__GIF_EXIT__:"):
-                    gif_url = tool_result.split("__GIF_EXIT__:", 1)[1]
-                    return {"choices": [{"message": {"content": gif_url, "finish_reason": "gif_exit"}}]}
+                    gif_data = tool_result.split("__GIF_EXIT__:", 1)[1]
+                    parts = gif_data.split("|||GIF_SPLIT|||", 1)
+                    gif_url = parts[0]
+                    gif_message = parts[1] if len(parts) > 1 else None
+                    return {"choices": [{"message": {"content": gif_url, "gif_message": gif_message, "finish_reason": "gif_exit"}}]}
 
                 messages.append({
                     "tool_call_id": tc_dict.get('id', ''),
@@ -4757,7 +4638,7 @@ async def query_nvidia(messages: list, my_msg: discord.Message, user_message: di
             except Exception:
                 pass
 
-            return await query_nvidia(messages, my_msg, user_message, thinking_start_time)
+            return await query_nvidia(messages, my_msg, user_message, thinking_start_time, subscription_tier=subscription_tier)
         
         return {
             "choices": [{
