@@ -66,7 +66,7 @@ import textwrap
 PERSONALITIES_DIR = os.path.join(_MODULE_DIR, "personalities")
 
 CHANNEL_MESSAGE_CACHE: dict[int, list[dict]] = {}
-MAX_CACHE_SIZE = 40
+MAX_CACHE_SIZE = 20
 
 class MessageCache:
     """Runtime cache for recent messages per channel."""
@@ -132,7 +132,7 @@ class MessageCache:
             return ""
 
         history_lines = []
-        for msg in messages[-40:]:
+        for msg in messages[-20:]:
             author_id = msg.get('author_id', 'unknown')
             base = f"[msg_id:{msg['id']}] {msg['author']} (discord_id:{author_id}): {msg['content']}"
 
@@ -4309,7 +4309,7 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
         {"role": "system", "content": personality_prompt},
         {"role": "system", "content": tool_instructions},
         {"role": "system", "content": f"You are talking to the rotur user named: {rotur_user.get('username', 'someone')}. On discord they are {message.author.name} ({message.author.id}) with display name: {message.author.display_name}. You are chatting in {message.channel.id}."},
-        {"role": "system", "content": f"User object (safe fields only): {json.dumps(safe_user_data, indent=2)}"},
+        {"role": "system", "content": f"User object (safe fields only): {json.dumps(safe_user_data)}"},
         {"role": "system", "content": f"Guild ID: {message.guild.id if message.guild else 'global'} - Use this guild_id for save_memory and search_memories tool calls."},
     ]
     
@@ -4321,7 +4321,7 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
 
     channel_history = message_cache.get_message_history(message.channel.id)
     if channel_history:
-        messages.append({"role": "system", "content": f"RECENT CHANNEL CONTEXT (last 40 messages):\n\n{channel_history}"})
+        messages.append({"role": "system", "content": f"RECENT CHANNEL CONTEXT (last 20 messages):\n\n{channel_history}"})
 
     # Proactive knowledge retrieval with improved query terms
     from .helpers.memory_system import memory_system
@@ -4332,16 +4332,16 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
         guild_id=guild_id,
         query=user_tag,
         tags_filter=[user_tag],
-        limit=10,
+        limit=5,
         use_semantic=False
     )
-    
+
     # Get high-importance memories as contextual background
     important_memories = memory_system.search_memories(
         guild_id=guild_id,
         query=prompt,
         min_importance=7,
-        limit=15,
+        limit=8,
         use_semantic=True
     )
     
@@ -4358,21 +4358,21 @@ async def handle_ai_query(message: discord.Message, prompt: str, context_message
         # Separate into conscious and unconscious/contextual memories
         user_context = [m for m in all_memories if any(t.startswith('user:') for t in m.get('tags', []))]
         general_context = [m for m in all_memories if not any(t.startswith('user:') for t in m.get('tags', []))]
-        
+
         memory_sections = []
-        
+
         if user_context:
             user_content = "ABOUT THIS USER:\n\n" + "\n\n".join(
-                f"- {m['content']}" for m in user_context[:5]
+                f"- {m['content']}" for m in user_context[:3]
             )
             memory_sections.append(user_content)
-        
+
         if general_context:
             general_content = "RELEVANT CONTEXT & MEMORIES:\n\n" + "\n\n".join(
-                f"- {m['content']}" for m in general_context[:5]
+                f"- {m['content']}" for m in general_context[:3]
             )
             memory_sections.append(general_content)
-        
+
         messages.append({"role": "system", "content": "\n\n".join(memory_sections)})
 
     if auto_skills_content:

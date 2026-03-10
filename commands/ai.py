@@ -86,7 +86,7 @@ async def ai_command(ctx: discord.Interaction, prompt: str):
     messages = [
         {"role": "system", "content": personality_prompt},
         {"role": "system", "content": f"You are talking to the rotur user named: {rotur_user.get('username', 'someone')}. On discord they are {ctx.user.name} ({ctx.user.id}) with display name: {ctx.user.display_name}. This is a context-free AI query - do NOT reference previous messages or conversation."},
-        {"role": "system", "content": f"User object (safe fields only): {json.dumps(safe_user_data, indent=2)}"},
+        {"role": "system", "content": f"User object (safe fields only): {json.dumps(safe_user_data)}"},
         {"role": "user", "content": prompt},
     ]
 
