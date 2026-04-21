@@ -10,6 +10,7 @@ from .helpers.icon_cache import IconCache
 from .shared import allowed_everywhere, send_message, catify, catmaid_mode
 
 XP_SYSTEM_ENABLED = False
+DAILY_CREDITS_ENABLED = False
 
 if XP_SYSTEM_ENABLED:
     from .helpers import xp_system
@@ -645,7 +646,6 @@ intents.members = True
 
 client = discord.Client(intents=intents)
 
-last_daily_announcement_date = None
 daily_scheduler_started = False
 battery_notifier_started = False
 icon_cache_cleanup_started = False
@@ -2549,6 +2549,9 @@ async def activity_alert(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='daily_credit_dm', description='Toggle receiving a DM when daily credits are awarded (opt-in)')
 async def daily_credit_dm(ctx: discord.Interaction):
+    if not DAILY_CREDITS_ENABLED:
+        await send_message(ctx.response, "Daily credits have been moved to the OriginChats bot.", ephemeral=True)
+        return
     enabled = toggle_daily_credit_dm_optin(ctx.user.id)
     if enabled:
         embed = discord.Embed(
@@ -2591,6 +2594,9 @@ async def levelup_messages(ctx: discord.Interaction):
 @allowed_everywhere
 @tree.command(name='process_daily_credits', description='[Admin] Manually reset daily credits and announce new day')
 async def manual_daily_credits(ctx: discord.Interaction):
+    if not DAILY_CREDITS_ENABLED:
+        await send_message(ctx.response, "Daily credits have been moved to the OriginChats bot.", ephemeral=True)
+        return
     if str(ctx.user.id) != mistium:
         await send_message(ctx.response, "❌ Only administrators can run this command!", ephemeral=True)
         return
@@ -2643,7 +2649,7 @@ async def on_message(message):
 
     if (message.guild is not None and 
         not message.author.bot and
-        str(message.guild.id) == originOS):
+        str(message.guild.id) == originOS and DAILY_CREDITS_ENABLED):
         
         try:
             activity_data = load_daily_activity()
@@ -3089,7 +3095,7 @@ async def on_ready():
     else:
         print('Battery notifier already running; skipping new task')
     global daily_scheduler_started
-    if not daily_scheduler_started:
+    if not daily_scheduler_started and DAILY_CREDITS_ENABLED:
         asyncio.create_task(daily_credits_scheduler())
         daily_scheduler_started = True
         print('Daily credits scheduler started')
